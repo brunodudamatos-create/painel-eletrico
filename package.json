@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "Dashboard de monitoramento elétrico e temperatura via Tuya",
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   }
 }
