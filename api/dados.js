@@ -1,16 +1,28 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// Painel Elétrico — Tuya API (APENAS MEDIDOR OPERANTE)
-// EARU EASEM-E (medidor elétrico)
+// Painel Elétrico — Tuya API (PADRÃO DE SEGURANÇA V2)
+// APENAS MEDIDOR OPERANTE (EARU EASEM-E)
 // ================================================================
 
 const crypto = require('crypto');
 
-// ---- Função de assinatura HMAC-SHA256 (exigida pela Tuya) ----
-function assinar(texto, segredo) {
+// ---- Função de Assinatura Oficial Tuya V2 (Exigida para novos projetos) ----
+function gerarAssinaturaTuya(clientId, secret, timestamp, method, urlPath, accessToken = '', body = '') {
+  // 1. Calcula o hash SHA256 do corpo da requisição (vazio para requisições GET)
+  const contentHash = crypto.createHash('sha256').update(body).digest('hex');
+  
+  // 2. Monta a String to Sign conforme especificação estrita V2 da Tuya
+  const stringToSign = `${method}\n${contentHash}\n\n${urlPath}`;
+  
+  // 3. Monta a cadeia final dependendo se é geração de token ou consulta de recurso
+  const cadeiaFinal = accessToken 
+    ? clientId + accessToken + timestamp + stringToSign 
+    : clientId + timestamp + stringToSign;
+  
+  // 4. Gera o HMAC-SHA256 final em letras maiúsculas
   return crypto
-    .createHmac('sha256', segredo)
-    .update(texto)
+    .createHmac('sha256', secret)
+    .update(cadeiaFinal)
     .digest('hex')
     .toUpperCase();
 }
@@ -36,12 +48,12 @@ module.exports = async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // ---- Lê as credenciais essenciais das variáveis do Vercel ----
+  // ---- Lê as credenciais das variáveis de ambiente do Vercel ----
   const CLIENT_ID          = process.env.TUYA_CLIENT_ID;
   const CLIENT_SECRET      = process.env.TUYA_CLIENT_SECRET;
   const DEVICE_ID_MEDIDOR  = process.env.TUYA_DEVICE_MEDIDOR;
 
-  // Verifica se as variáveis do medidor estão configuradas
+  // Verifica se as variáveis estão configuradas
   if (!CLIENT_ID || !CLIENT_SECRET || !DEVICE_ID_MEDIDOR) {
     return res.status(500).json({
       erro: 'Variáveis de ambiente essenciais não configuradas no Vercel.',
@@ -58,12 +70,13 @@ module.exports = async function handler(req, res) {
   try {
 
     // ============================================================
-    // PASSO 1 — Autenticar na Tuya e obter access_token
+    // PASSO 1 — Autenticar na Tuya e obter access_token (Via V2 Sign)
     // ============================================================
     const t1 = Date.now().toString();
-    const assinaturaToken = assinar(CLIENT_ID + t1, CLIENT_SECRET);
+    const urlToken = '/v1.0/token?grant_type=1';
+    const assinaturaToken = gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t1, 'GET', urlToken);
 
-    const respostaToken = await fetch(`${BASE_URL}/v1.0/token?grant_type=1`, {
+    const respostaToken = await fetch(`${BASE_URL}${urlToken}`, {
       headers: {
         client_id:   CLIENT_ID,
         sign:        assinaturaToken,
@@ -78,17 +91,18 @@ module.exports = async function handler(req, res) {
       return res.status(401).json({
         erro: 'Falha na autenticação com a Tuya.',
         detalhe: dadosToken,
-        dica: 'Verifique se o TUYA_CLIENT_ID e TUYA_CLIENT_SECRET estão perfeitamente corretos no Vercel.'
+        dica: 'Se persistir, confirme se o Access ID e o Access Secret não foram invertidos no painel do Vercel.'
       });
     }
 
     const accessToken = dadosToken.result.access_token;
 
     // ============================================================
-    // PASSO 2 — Buscar dados APENAS do medidor elétrico
+    // PASSO 2 — Buscar dados APENAS do medidor elétrico (Via V2 Sign)
     // ============================================================
     const t2 = Date.now().toString();
-    const assinaturaDispositivo = assinar(CLIENT_ID + accessToken + t2, CLIENT_SECRET);
+    const urlMedidor = `/v1.0/devices/${DEVICE_ID_MEDIDOR}/status`;
+    const assinaturaDispositivo = gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t2, 'GET', urlMedidor, accessToken);
 
     const headersDispositivo = {
       client_id:    CLIENT_ID,
@@ -98,7 +112,7 @@ module.exports = async function handler(req, res) {
       sign_method:  'HMAC-SHA256',
     };
 
-    const resMedidor = await fetch(`${BASE_URL}/v1.0/devices/${DEVICE_ID_MEDIDOR}/status`, { headers: headersDispositivo });
+    const resMedidor = await fetch(`${BASE_URL}${urlMedidor}`, { headers: headersDispositivo });
     const dadosMedidor = await resMedidor.json();
     const med = dadosMedidor.result || [];
 
@@ -136,7 +150,7 @@ module.exports = async function handler(req, res) {
       eletrico.fat_pot_medio = +((eletrico.fat_pot_a+eletrico.fat_pot_b+eletrico.fat_pot_c)/3).toFixed(2);
 
     // ============================================================
-    // PASSO 4 — Termostato Desativado (Evita que o Dashboard quebre)
+    // PASSO 4 — Termostato Desativado (mockado para não quebrar o layout)
     // ============================================================
     const temperatura = {
       temp_atual:        null,
@@ -147,21 +161,20 @@ module.exports = async function handler(req, res) {
     };
 
     // ============================================================
-    // PASSO 5 — Gerar alertas automáticos
+    // PASSO 5 — Alertas automáticos do Medidor
     // ============================================================
     const alertas = [];
-
     if (eletrico.falha != null && eletrico.falha !== 0)
       alertas.push('⚡ Falha elétrica detectada — código: ' + eletrico.falha);
     if (eletrico.tensao_a != null && (eletrico.tensao_a < 200 || eletrico.tensao_a > 240))
-      alertas.push('⚡ Tensão Fase A fora do range 200-240V: ' + eletrico.tensao_a + 'V');
+      alertas.push('⚡ Tensão Fase A fora do range: ' + eletrico.tensao_a + 'V');
     if (eletrico.tensao_b != null && (eletrico.tensao_b < 200 || eletrico.tensao_b > 240))
-      alertas.push('⚡ Tensão Fase B fora do range 200-240V: ' + eletrico.tensao_b + 'V');
+      alertas.push('⚡ Tensão Fase B fora do range: ' + eletrico.tensao_b + 'V');
     if (eletrico.tensao_c != null && (eletrico.tensao_c < 200 || eletrico.tensao_c > 240))
-      alertas.push('⚡ Tensão Fase C fora do range 200-240V: ' + eletrico.tensao_c + 'V');
+      alertas.push('⚡ Tensão Fase C fora do range: ' + eletrico.tensao_c + 'V');
 
     // ============================================================
-    // PASSO 6 — Retornar payload completo ao Dashboard
+    // PASSO 6 — Retorno final limpo ao Dashboard
     // ============================================================
     return res.status(200).json({
       timestamp:    new Date().toISOString(),
@@ -176,7 +189,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({
       erro:   'Erro interno na função.',
       detalhe: err.message,
-      dica:   'Verifique se o Device ID do medidor está correto e se está online.'
+      dica:   'Verifique se o Device ID do medidor está correto e online.'
     });
   }
 };
