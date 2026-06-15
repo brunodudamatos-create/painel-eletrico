@@ -60,7 +60,7 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  const BASE_URL = 'https://openapi.tuyaeu.com'; // Data Center: South America
+  const BASE_URL = 'https://openapi.tuyaus.com'; // Data Center: Western America Data Center
 
   try {
 
