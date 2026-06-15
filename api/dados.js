@@ -1,11 +1,7 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// Painel Elétrico — Tuya API
-// EARU EASEM-E (medidor elétrico) + XY-SA10-W (temperatura)
-// ================================================================
-// Este arquivo fica no servidor Vercel (gratuito, 24h).
-// Ele busca os dados da Tuya com segurança e entrega ao Dashboard.
-// Suas credenciais NUNCA aparecem para o usuário.
+// Painel Elétrico — Tuya API (APENAS MEDIDOR OPERANTE)
+// EARU EASEM-E (medidor elétrico)
 // ================================================================
 
 const crypto = require('crypto');
@@ -40,22 +36,19 @@ module.exports = async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // ---- Lê as credenciais das variáveis de ambiente do Vercel ----
-  // (você vai configurar essas variáveis no painel do Vercel)
+  // ---- Lê as credenciais essenciais das variáveis do Vercel ----
   const CLIENT_ID          = process.env.TUYA_CLIENT_ID;
   const CLIENT_SECRET      = process.env.TUYA_CLIENT_SECRET;
   const DEVICE_ID_MEDIDOR  = process.env.TUYA_DEVICE_MEDIDOR;
-  const DEVICE_ID_TERMOSTO = process.env.TUYA_DEVICE_TERMOSTATO;
 
-  // Verifica se as variáveis estão configuradas
-  if (!CLIENT_ID || !CLIENT_SECRET || !DEVICE_ID_MEDIDOR || !DEVICE_ID_TERMOSTO) {
+  // Verifica se as variáveis do medidor estão configuradas
+  if (!CLIENT_ID || !CLIENT_SECRET || !DEVICE_ID_MEDIDOR) {
     return res.status(500).json({
-      erro: 'Variáveis de ambiente não configuradas no Vercel.',
+      erro: 'Variáveis de ambiente essenciais não configuradas no Vercel.',
       faltando: {
         TUYA_CLIENT_ID:          !CLIENT_ID,
         TUYA_CLIENT_SECRET:      !CLIENT_SECRET,
         TUYA_DEVICE_MEDIDOR:     !DEVICE_ID_MEDIDOR,
-        TUYA_DEVICE_TERMOSTATO:  !DEVICE_ID_TERMOSTO,
       }
     });
   }
@@ -85,14 +78,14 @@ module.exports = async function handler(req, res) {
       return res.status(401).json({
         erro: 'Falha na autenticação com a Tuya.',
         detalhe: dadosToken,
-        dica: 'Verifique o TUYA_CLIENT_ID e TUYA_CLIENT_SECRET no Vercel.'
+        dica: 'Verifique se o TUYA_CLIENT_ID e TUYA_CLIENT_SECRET estão perfeitamente corretos no Vercel.'
       });
     }
 
     const accessToken = dadosToken.result.access_token;
 
     // ============================================================
-    // PASSO 2 — Buscar dados dos dois dispositivos em paralelo
+    // PASSO 2 — Buscar dados APENAS do medidor elétrico
     // ============================================================
     const t2 = Date.now().toString();
     const assinaturaDispositivo = assinar(CLIENT_ID + accessToken + t2, CLIENT_SECRET);
@@ -105,27 +98,12 @@ module.exports = async function handler(req, res) {
       sign_method:  'HMAC-SHA256',
     };
 
-    // Busca os dois ao mesmo tempo (mais rápido)
-    const [resMedidor, resTermostato] = await Promise.all([
-      fetch(`${BASE_URL}/v1.0/devices/${DEVICE_ID_MEDIDOR}/status`,  { headers: headersDispositivo }),
-      fetch(`${BASE_URL}/v1.0/devices/${DEVICE_ID_TERMOSTO}/status`, { headers: headersDispositivo }),
-    ]);
-
-    const dadosMedidor    = await resMedidor.json();
-    const dadosTermostato = await resTermostato.json();
-
-    const med  = dadosMedidor.result    || [];
-    const term = dadosTermostato.result || [];
+    const resMedidor = await fetch(`${BASE_URL}/v1.0/devices/${DEVICE_ID_MEDIDOR}/status`, { headers: headersDispositivo });
+    const dadosMedidor = await resMedidor.json();
+    const med = dadosMedidor.result || [];
 
     // ============================================================
     // PASSO 3 — Processar dados do EARU EASEM-E
-    // Conversões obrigatórias dos Data Points Tuya:
-    //   voltage:      ÷ 10    (2203 → 220,3 V)
-    //   current:      ÷ 1000  (12400 → 12,4 A)
-    //   active_power: direto  (em Watts)
-    //   power_factor: ÷ 100   (92 → 0,92)
-    //   energy:       direto  (em kWh)
-    //   frequency:    ÷ 10    (600 → 60,0 Hz)
     // ============================================================
     const eletrico = {
       // Fase A
@@ -158,19 +136,14 @@ module.exports = async function handler(req, res) {
       eletrico.fat_pot_medio = +((eletrico.fat_pot_a+eletrico.fat_pot_b+eletrico.fat_pot_c)/3).toFixed(2);
 
     // ============================================================
-    // PASSO 4 — Processar dados do XY-SA10-W
-    // Conversões:
-    //   temp_current / temp_set: ÷ 10 (325 → 32,5°C)
-    //   switch: true/false
-    //   mode: 'auto' / 'manual'
-    //   temp_alarm: true/false
+    // PASSO 4 — Termostato Desativado (Evita que o Dashboard quebre)
     // ============================================================
     const temperatura = {
-      temp_atual:        dp(term,'temp_current') != null ? +(dp(term,'temp_current')/10).toFixed(1) : null,
-      temp_setpoint:     dp(term,'temp_set')     != null ? +(dp(term,'temp_set')/10).toFixed(1)     : null,
-      ventilador_ligado: dp(term,'switch'),
-      modo:              dp(term,'mode'),
-      alarme_temp:       dp(term,'temp_alarm'),
+      temp_atual:        null,
+      temp_setpoint:     null,
+      ventilador_ligado: false,
+      modo:              'manual',
+      alarme_temp:       false,
     };
 
     // ============================================================
@@ -178,14 +151,6 @@ module.exports = async function handler(req, res) {
     // ============================================================
     const alertas = [];
 
-    if (temperatura.temp_atual != null) {
-      if (temperatura.temp_atual >= 50)
-        alertas.push('🔴 CRÍTICO: Temperatura acima de 50°C! (' + temperatura.temp_atual + '°C)');
-      else if (temperatura.temp_atual >= 38)
-        alertas.push('🟡 ATENÇÃO: Temperatura elevada (' + temperatura.temp_atual + '°C)');
-    }
-    if (temperatura.alarme_temp === true)
-      alertas.push('🔔 Alarme de temperatura ativado no termostato');
     if (eletrico.falha != null && eletrico.falha !== 0)
       alertas.push('⚡ Falha elétrica detectada — código: ' + eletrico.falha);
     if (eletrico.tensao_a != null && (eletrico.tensao_a < 200 || eletrico.tensao_a > 240))
@@ -211,7 +176,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({
       erro:   'Erro interno na função.',
       detalhe: err.message,
-      dica:   'Verifique se os Device IDs estão corretos e se os dispositivos estão online.'
+      dica:   'Verifique se o Device ID do medidor está correto e se está online.'
     });
   }
 };
