@@ -6,7 +6,7 @@
 <title>⚡ Painel Elétrico — Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-   *{margin:0;padding:0;box-sizing:border-box}
+  *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
 
   /* HEADER */
@@ -16,6 +16,7 @@
   .ts{font-size:.7rem;color:#8b949e}
   .badge{padding:4px 12px;border-radius:20px;font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:5px;background:#1a4731;color:#3fb950;border:1px solid #238636}
   .badge.alerta{background:#3d1f00;color:#f0883e;border-color:#d29922}
+  .badge.offline{background:#3d1f00;color:#f85149;border-color:#f85149}
   .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
@@ -49,7 +50,9 @@
   /* ALERTAS */
   .alertas-box{background:#2d1b00;border:1px solid #d29922;border-radius:12px;padding:13px 17px;margin-bottom:18px;display:none}
   .alertas-box.show{display:block}
+  .alertas-box.falha-rede{border-color:#f85149; background:#2d1111;}
   .alertas-box h3{font-size:.8rem;color:#d29922;margin-bottom:5px}
+  .alertas-box.falha-rede h3{color:#f85149;}
   .ai{font-size:.8rem;color:#f0883e;padding:2px 0}
 
   /* SEÇÕES */
@@ -78,6 +81,9 @@
   .tnome{font-size:.68rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
   .tval{font-size:1.45rem;font-weight:700}
   .tunit{font-size:.68rem;color:#8b949e}
+
+  /* GRÁFICO */
+  .chart-container {height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
 
   footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
 
@@ -123,7 +129,7 @@
   </div>
 
   <div class="alertas-box" id="abox">
-    <h3>⚠️ Alertas Ativos</h3>
+    <h3 id="atitle">⚠️ Alertas Ativos</h3>
     <div id="alist"></div>
   </div>
 
@@ -164,15 +170,16 @@
   </div>
 
   <div class="stitle">📈 Tendência de Tensões (Cuiabá)</div>
-  <div style="height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px;">
+  <div class="chart-container">
     <canvas id="tensaoChart"></canvas>
   </div>
 </main>
 
-<footer>Atualização a cada 30s &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
+<footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
 
 <script>
 const API_URL = 'https://painel-eletrico.vercel.app/api/dados'; 
+let ultimaAtualizacao = Date.now();
 
 const ctx = document.getElementById('tensaoChart').getContext('2d');
 const chart = new Chart(ctx, {
@@ -200,6 +207,11 @@ function render(d) {
   const badge = document.getElementById('badge');
   badge.textContent = d.status === 'ALERTA' ? '🟡 ALERTA' : '🟢 NORMAL';
   badge.className = 'badge' + (d.status === 'ALERTA' ? ' alerta' : '');
+  
+  // Reseta estado da caixa de erro se voltou a funcionar
+  const abox = document.getElementById('abox');
+  abox.classList.remove('falha-rede');
+  document.getElementById('atitle').textContent = '⚠️ Alertas Ativos';
 
   const t = d.temperatura;
   if (t) {
@@ -244,7 +256,6 @@ function render(d) {
         else if (f.v < 111) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
     });
 
-    const abox = document.getElementById('abox');
     if(alertas.length > 0) { abox.classList.add('show'); document.getElementById('alist').innerHTML = alertas.map(a => `<div class="ai">${a}</div>`).join(''); } 
     else abox.classList.remove('show');
 
@@ -254,13 +265,43 @@ function render(d) {
     chart.data.datasets[0].data.push(el.tensao_a);
     chart.data.datasets[1].data.push(el.tensao_b);
     chart.data.datasets[2].data.push(el.tensao_c);
-    if(chart.data.labels.length > 60) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
+    // Ajustado para manter um histórico visível de mais leituras (já que agora demora 5 min cada)
+    if(chart.data.labels.length > 12) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
     chart.update();
   }
 }
 
-async function atualizar() { try { const r = await fetch(API_URL); if(r.ok) render(await r.json()); } catch(e) { console.log('Erro:', e); } }
-setInterval(atualizar, 30000);
+function dispararAlarmeFalha() {
+    const abox = document.getElementById('abox');
+    abox.classList.add('show', 'falha-rede');
+    document.getElementById('atitle').textContent = '⚠️ ERRO DE SISTEMA';
+    document.getElementById('alist').innerHTML = '<div class="ai" style="color:#f85149; font-weight:bold;">🚨 OFFLINE: Falha na rede, Vercel ou equipamento parou.</div>';
+    
+    const badge = document.getElementById('badge');
+    badge.textContent = '🔴 OFFLINE';
+    badge.className = 'badge offline';
+}
+
+async function atualizar() { 
+  try { 
+    const r = await fetch(API_URL); 
+    if(r.ok) {
+        render(await r.json()); 
+        ultimaAtualizacao = Date.now(); // Atualiza o relógio de segurança
+    } else {
+        throw new Error('API não respondeu com sucesso');
+    }
+  } catch(e) { 
+    console.log('Falha na comunicação:', e); 
+    // Se passar de 11 minutos (660000ms) sem receber dados, dispara o offline
+    if (Date.now() - ultimaAtualizacao > 660000) {
+        dispararAlarmeFalha();
+    }
+  } 
+}
+
+// Atualiza a cada 5 minutos (300.000 milissegundos)
+setInterval(atualizar, 300000);
 atualizar();
 </script>
 </body>
