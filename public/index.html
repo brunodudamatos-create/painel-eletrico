@@ -4,280 +4,143 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>⚡ Painel Elétrico — Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
 
-  /* HEADER */
-  header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
-  header h1{font-size:1.05rem;font-weight:600;color:#58a6ff}
-  .hright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  .ts{font-size:.7rem;color:#8b949e}
-  .badge{padding:4px 12px;border-radius:20px;font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:5px;background:#1a4731;color:#3fb950;border:1px solid #238636}
-  .badge.alerta{background:#3d1f00;color:#f0883e;border-color:#d29922}
-  .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    header h1{font-size:1.05rem;font-weight:600;color:#58a6ff}
+    .hright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .ts{font-size:.7rem;color:#8b949e}
+    .badge{padding:4px 12px;border-radius:20px;font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:5px;background:#1a4731;color:#3fb950;border:1px solid #238636}
+    .badge.alerta{background:#3d1f00;color:#f0883e;border-color:#d29922}
+    .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-  main{padding:18px 28px;max-width:1400px;margin:0 auto}
+    main{padding:18px 28px;max-width:1400px;margin:0 auto}
 
-  /* TEMPERATURA */
-  .temp-card{background:linear-gradient(135deg,#1c2a3a,#162032);border:1px solid #1f6feb;border-radius:14px;padding:22px 26px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:20px;align-items:center}
-  .tlabel{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-  .tnum{font-size:3.6rem;font-weight:700;line-height:1;color:#58a6ff}
-  .tnum span{font-size:1.3rem;font-weight:400;color:#8b949e}
-  .tnum.quente{color:#f0883e}
-  .tnum.critico{color:#f85149}
-  .tsub{font-size:.75rem;color:#8b949e;margin-top:5px}
-  .tsub b{color:#58a6ff}
+    .alertas-box{background:#2d1b00;border:1px solid #d29922;border-radius:12px;padding:13px 17px;margin-bottom:18px;display:none}
+    .alertas-box.show{display:block}
+    .alertas-box h3{font-size:.8rem;color:#d29922;margin-bottom:5px}
+    .ai{font-size:.8rem;color:#f0883e;padding:2px 0}
 
-  .gauge-wrap{display:flex;flex-direction:column;gap:5px}
-  .gtitle{font-size:.7rem;color:#8b949e}
-  .gbar{height:13px;background:#21262d;border-radius:7px;overflow:hidden}
-  .gfill{height:100%;border-radius:7px;background:linear-gradient(90deg,#238636,#d29922,#f85149);transition:width .8s ease}
-  .glabels{display:flex;justify-content:space-between;font-size:.65rem;color:#8b949e}
-  .ginfo{display:flex;justify-content:space-between;margin-top:6px;font-size:.72rem;color:#8b949e}
+    .stitle{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:#8b949e;margin-bottom:11px;display:flex;align-items:center;gap:7px}
+    .stitle::after{content:'';flex:1;height:1px;background:#21262d}
 
-  .fan-box{display:flex;flex-direction:column;align-items:center;gap:7px}
-  .ficon{font-size:2.6rem}
-  .ficon.spin{animation:spin 1s linear infinite}
-  @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-  .fbadge{font-size:.75rem;font-weight:600;padding:4px 14px;border-radius:20px;background:#1a4731;color:#3fb950;border:1px solid #238636}
-  .fbadge.off{background:#21262d;color:#8b949e;border-color:#30363d}
-  .fmodo{font-size:.68rem;color:#8b949e}
+    .fases{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px}
+    .fc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px}
+    .fc.fa{border-top:3px solid #58a6ff}
+    .fc.fb{border-top:3px solid #3fb950}
+    .fc.fc2{border-top:3px solid #f0883e}
+    .ftit{font-size:.8rem;font-weight:600;margin-bottom:11px}
+    .med{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid #21262d}
+    .mv{font-size:.92rem;font-weight:600}
+    .mu{font-size:.65rem;color:#8b949e;margin-left:2px}
 
-  /* ALERTAS */
-  .alertas-box{background:#2d1b00;border:1px solid #d29922;border-radius:12px;padding:13px 17px;margin-bottom:18px;display:none}
-  .alertas-box.show{display:block}
-  .alertas-box h3{font-size:.8rem;color:#d29922;margin-bottom:5px}
-  .ai{font-size:.8rem;color:#f0883e;padding:2px 0}
+    .totais{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
+    .tc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 16px}
+    .tval{font-size:1.45rem;font-weight:700}
+    .tunit{font-size:.68rem;color:#8b949e}
 
-  /* SEÇÕES */
-  .stitle{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:#8b949e;margin-bottom:11px;display:flex;align-items:center;gap:7px}
-  .stitle::after{content:'';flex:1;height:1px;background:#21262d}
-
-  .fases{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px}
-  .fc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px}
-  .fc.fa{border-top:3px solid #58a6ff}
-  .fc.fb{border-top:3px solid #3fb950}
-  .fc.fc2{border-top:3px solid #f0883e}
-  .ftit{font-size:.8rem;font-weight:600;margin-bottom:11px}
-  .fc.fa .ftit{color:#58a6ff}
-  .fc.fb .ftit{color:#3fb950}
-  .fc.fc2 .ftit{color:#f0883e}
-
-  .med{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid #21262d}
-  .med:last-child{border-bottom:none}
-  .mn{font-size:.72rem;color:#8b949e}
-  .mv{font-size:.92rem;font-weight:600}
-  .mu{font-size:.65rem;color:#8b949e;margin-left:2px}
-
-  .totais{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
-  .tc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 16px}
-  .tico{font-size:1.2rem;margin-bottom:3px}
-  .tnome{font-size:.68rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
-  .tval{font-size:1.45rem;font-weight:700}
-  .tunit{font-size:.68rem;color:#8b949e}
-
-  footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
-
-  @media(max-width:768px){
-    main{padding:12px}
-    .temp-card{grid-template-columns:1fr}
-    .fases{grid-template-columns:1fr}
-    .totais{grid-template-columns:repeat(2,1fr)}
-  }
+    footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>⚡ Painel Elétrico Medidor Energia — Monitor em Tempo Real - Brasileira Distribuidora de Frutas</h1>
-  <div class="hright">
-    <span class="ts" id="ts">Conectando...</span>
-    <div class="badge" id="badge">🟢 NORMAL</div>
-  </div>
+    <h1>⚡ Painel Elétrico — Brasileira Distribuidora de Frutas</h1>
+    <div class="hright">
+        <span class="ts" id="ts">Conectando...</span>
+        <div class="badge" id="badge">🟢 NORMAL</div>
+    </div>
 </header>
 
 <main>
+    <div class="alertas-box" id="abox">
+        <h3>⚠️ Alertas Ativos</h3>
+        <div id="alist"></div>
+    </div>
 
-  <!-- TEMPERATURA -->
-  <div class="temp-card">
-    <div>
-      <div class="tlabel">🌡️ Temperatura do Painel</div>
-      <div class="tnum" id="tval">--<span>°C</span></div>
-      <div class="tsub">Setpoint ventilador: <b id="tset">--°C</b></div>
+    <div class="stitle">⚡ Medições por Fase</div>
+    <div class="fases">
+        <div class="fc fa"><div class="ftit" style="color:#58a6ff">Fase A</div>
+            <div class="med"><span class="mn">Tensão</span><span class="mv" id="va">--<span class="mu">V</span></span></div>
+            <div class="med"><span class="mn">Corrente</span><span class="mv" id="ia">--<span class="mu">A</span></span></div>
+        </div>
+        <div class="fc fb"><div class="ftit" style="color:#3fb950">Fase B</div>
+            <div class="med"><span class="mn">Tensão</span><span class="mv" id="vb">--<span class="mu">V</span></span></div>
+            <div class="med"><span class="mn">Corrente</span><span class="mv" id="ib">--<span class="mu">A</span></span></div>
+        </div>
+        <div class="fc fc2"><div class="ftit" style="color:#f0883e">Fase C</div>
+            <div class="med"><span class="mn">Tensão</span><span class="mv" id="vc">--<span class="mu">V</span></span></div>
+            <div class="med"><span class="mn">Corrente</span><span class="mv" id="ic">--<span class="mu">A</span></span></div>
+        </div>
     </div>
-    <div class="gauge-wrap">
-      <div class="gtitle">Nível de temperatura (0°C → 60°C)</div>
-      <div class="gbar"><div class="gfill" id="gfill" style="width:0%"></div></div>
-      <div class="glabels"><span>0°C</span><span style="color:#d29922">38°C ⚠️</span><span style="color:#f85149">60°C 🔴</span></div>
-      <div class="ginfo">
-        <span>Alarme: <span id="alarme" style="color:#3fb950">Inativo</span></span>
-        <span>Modo: <span id="fmodo">--</span></span>
-      </div>
-    </div>
-    <div class="fan-box">
-      <div class="ficon" id="ficon">🌀</div>
-      <div class="fbadge off" id="fbadge">VENTILADOR OFF</div>
-      <div class="fmodo" id="fmodolab"></div>
-    </div>
-  </div>
 
-  <!-- ALERTAS -->
-  <div class="alertas-box" id="abox">
-    <h3>⚠️ Alertas Ativos</h3>
-    <div id="alist"></div>
-  </div>
-
-  <!-- FASES -->
-  <div class="stitle">⚡ Medições por Fase</div>
-  <div class="fases">
-    <div class="fc fa">
-      <div class="ftit">Fase A</div>
-      <div class="med"><span class="mn">Tensão</span><span class="mv" id="va">--<span class="mu">V</span></span></div>
-      <div class="med"><span class="mn">Corrente</span><span class="mv" id="ia">--<span class="mu">A</span></span></div>
-      <div class="med"><span class="mn">Potência</span><span class="mv" id="pa">--<span class="mu">W</span></span></div>
-      <div class="med"><span class="mn">Fator Pot.</span><span class="mv" id="fpa">--</span></div>
-      <div class="med"><span class="mn">Energia</span><span class="mv" id="ea">--<span class="mu">kWh</span></span></div>
+    <div class="stitle">📊 Totais do Sistema</div>
+    <div class="totais">
+        <div class="tc"><div class="tnome">Potência Total</div><div class="tval" id="ptotal">--</div><div class="tunit">W</div></div>
+        <div class="tc"><div class="tnome">Energia Total</div><div class="tval" id="etotal">--</div><div class="tunit">kWh</div></div>
     </div>
-    <div class="fc fb">
-      <div class="ftit">Fase B</div>
-      <div class="med"><span class="mn">Tensão</span><span class="mv" id="vb">--<span class="mu">V</span></span></div>
-      <div class="med"><span class="mn">Corrente</span><span class="mv" id="ib">--<span class="mu">A</span></span></div>
-      <div class="med"><span class="mn">Potência</span><span class="mv" id="pb">--<span class="mu">W</span></span></div>
-      <div class="med"><span class="mn">Fator Pot.</span><span class="mv" id="fpb">--</span></div>
-      <div class="med"><span class="mn">Energia</span><span class="mv" id="eb">--<span class="mu">kWh</span></span></div>
-    </div>
-    <div class="fc fc2">
-      <div class="ftit">Fase C</div>
-      <div class="med"><span class="mn">Tensão</span><span class="mv" id="vc">--<span class="mu">V</span></span></div>
-      <div class="med"><span class="mn">Corrente</span><span class="mv" id="ic">--<span class="mu">A</span></span></div>
-      <div class="med"><span class="mn">Potência</span><span class="mv" id="pc">--<span class="mu">W</span></span></div>
-      <div class="med"><span class="mn">Fator Pot.</span><span class="mv" id="fpc">--</span></div>
-      <div class="med"><span class="mn">Energia</span><span class="mv" id="ec">--<span class="mu">kWh</span></span></div>
-    </div>
-  </div>
 
-  <!-- TOTAIS -->
-  <div class="stitle">📊 Totais do Sistema</div>
-  <div class="totais">
-    <div class="tc"><div class="tico">⚡</div><div class="tnome">Potência Total</div><div class="tval" id="ptotal">--</div><div class="tunit">W</div></div>
-    <div class="tc"><div class="tico">🔋</div><div class="tnome">Energia Total</div><div class="tval" id="etotal">--</div><div class="tunit">kWh</div></div>
-    <div class="tc"><div class="tico">〰️</div><div class="tnome">Frequência</div><div class="tval" id="freq">--</div><div class="tunit">Hz</div></div>
-    <div class="tc"><div class="tico">📐</div><div class="tnome">FP Médio</div><div class="tval" id="fpm">--</div><div class="tunit">cos φ</div></div>
-  </div>
-
+    <div class="stitle">📈 Tensões (Última Hora)</div>
+    <div style="height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px;">
+        <canvas id="tensaoChart"></canvas>
+    </div>
 </main>
 
-<footer>Atualização a cada 30s &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
+<footer>Atualização automática | Monitoramento via Tuya | Brasileira Distribuidora de Frutas</footer>
 
 <script>
-// ==============================================================
-// ⚠️ ÚNICA LINHA QUE VOCÊ PRECISA ALTERAR:
-// Substitua pelo domínio do seu projeto no Vercel.
-// Exemplo: https://meu-painel.vercel.app/api/dados
-// ==============================================================
-const API_URL = 'https://painel-eletrico.vercel.app/api/dados'; 
-// ==============================================================
+    const API_URL = 'https://painel-eletrico.vercel.app/api/dados';
 
-function set(id, val, dec, unit) {
-  const el = document.getElementById(id);
-  if (!el || val === null || val === undefined) return;
-  const n = parseFloat(val);
-  if (isNaN(n)) return;
-  el.innerHTML = n.toFixed(dec) + (unit ? `<span class="mu">${unit}</span>` : '');
-}
+    // Gráfico
+    const ctx = document.getElementById('tensaoChart').getContext('2d');
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [
+            { label: 'Fase A', data: [], borderColor: '#58a6ff' },
+            { label: 'Fase B', data: [], borderColor: '#3fb950' },
+            { label: 'Fase C', data: [], borderColor: '#f0883e' }
+        ]},
+        options: { responsive: true, maintainAspectRatio: false }
+    });
 
-function render(d) {
-  document.getElementById('ts').textContent = d.timestamp_br || '--';
+    function render(d) {
+        document.getElementById('ts').textContent = d.timestamp_br || '--';
+        const el = d.eletrico;
+        if(el) {
+            document.getElementById('va').innerHTML = el.tensao_a + '<span class="mu">V</span>';
+            document.getElementById('vb').innerHTML = el.tensao_b + '<span class="mu">V</span>';
+            document.getElementById('vc').innerHTML = el.tensao_c + '<span class="mu">V</span>';
+            document.getElementById('ptotal').textContent = el.potencia_total;
+            document.getElementById('etotal').textContent = el.energia_total;
 
-  const badge = document.getElementById('badge');
-  badge.textContent = d.status === 'ALERTA' ? '🟡 ALERTA' : '🟢 NORMAL';
-  badge.className = 'badge' + (d.status === 'ALERTA' ? ' alerta' : '');
+            // Gráfico
+            const agora = new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba'});
+            chart.data.labels.push(agora);
+            chart.data.datasets[0].data.push(el.tensao_a);
+            chart.data.datasets[1].data.push(el.tensao_b);
+            chart.data.datasets[2].data.push(el.tensao_c);
+            if(chart.data.labels.length > 60) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
+            chart.update();
 
-  // Alertas
-  const abox = document.getElementById('abox');
-  if (d.alertas?.length > 0) {
-    abox.classList.add('show');
-    document.getElementById('alist').innerHTML = d.alertas.map(a => `<div class="ai">${a}</div>`).join('');
-  } else {
-    abox.classList.remove('show');
-  }
-
-  // Temperatura
-  const t = d.temperatura;
-  if (t) {
-    const temp = parseFloat(t.temp_atual);
-    const tval = document.getElementById('tval');
-    tval.innerHTML = (!isNaN(temp) ? temp.toFixed(1) : '--') + '<span>°C</span>';
-    tval.className = 'tnum' + (temp >= 50 ? ' critico' : temp >= 38 ? ' quente' : '');
-
-    document.getElementById('tset').textContent = t.temp_setpoint != null ? t.temp_setpoint + '°C' : '--°C';
-
-    const pct = Math.min(100, Math.max(0, (temp/60)*100));
-    document.getElementById('gfill').style.width = (isNaN(pct)?0:pct) + '%';
-
-    const ael = document.getElementById('alarme');
-    ael.textContent = t.alarme_temp ? '🔴 ATIVO' : 'Inativo';
-    ael.style.color = t.alarme_temp ? '#f85149' : '#3fb950';
-    document.getElementById('fmodo').textContent = t.modo || '--';
-
-    const fi = document.getElementById('ficon');
-    const fb = document.getElementById('fbadge');
-    if (t.ventilador_ligado) {
-      fi.classList.add('spin'); fb.textContent = 'VENTILADOR ON'; fb.className = 'fbadge';
-    } else {
-      fi.classList.remove('spin'); fb.textContent = 'VENTILADOR OFF'; fb.className = 'fbadge off';
+            // Alarmes
+            let alertas = [];
+            if(el.tensao_a < 111 || el.tensao_a > 133) alertas.push("🚨 Fase A: " + el.tensao_a + "V");
+            if(el.tensao_b < 111 || el.tensao_b > 133) alertas.push("🚨 Fase B: " + el.tensao_b + "V");
+            if(el.tensao_c < 111 || el.tensao_c > 133) alertas.push("🚨 Fase C: " + el.tensao_c + "V");
+            
+            const abox = document.getElementById('abox');
+            if(alertas.length > 0) { abox.classList.add('show'); document.getElementById('alist').innerHTML = alertas.map(a => `<div class="ai">${a}</div>`).join(''); } 
+            else abox.classList.remove('show');
+        }
     }
-  }
 
-  // Elétrico
-  const el = d.eletrico;
-  if (el) {
-    set('va', el.tensao_a,   1, 'V'); set('ia', el.corrente_a, 2, 'A');
-    set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2);
-    set('ea', el.energia_a,  2, 'kWh');
-    set('vb', el.tensao_b,   1, 'V'); set('ib', el.corrente_b, 2, 'A');
-    set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2);
-    set('eb', el.energia_b,  2, 'kWh');
-    set('vc', el.tensao_c,   1, 'V'); set('ic', el.corrente_c, 2, 'A');
-    set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2);
-    set('ec', el.energia_c,  2, 'kWh');
-    set('ptotal', el.potencia_total, 0);
-    set('etotal', el.energia_total,  2);
-    set('freq',   el.frequencia,     1);
-    set('fpm',    el.fat_pot_medio,  2);
-  }
-}
-
-// Dados demo para visualizar antes de conectar
-function demo() {
-  render({
-    timestamp_br: new Date().toLocaleString('pt-BR'),
-    status:'NORMAL', alertas:[],
-    temperatura:{ temp_atual:32.5, temp_setpoint:38.0, ventilador_ligado:false, modo:'auto', alarme_temp:false },
-    eletrico:{
-      tensao_a:220.3, corrente_a:12.4, potencia_a:2730, fat_pot_a:0.92, energia_a:428.5,
-      tensao_b:219.8, corrente_b:11.9, potencia_b:2615, fat_pot_b:0.91, energia_b:411.2,
-      tensao_c:221.1, corrente_c:13.1, potencia_c:2896, fat_pot_c:0.93, energia_c:444.8,
-      potencia_total:8241, energia_total:1284.5, frequencia:60.0, fat_pot_medio:0.92
-    }
-  });
-}
-
-async function atualizar() {
-  try {
-    const r = await fetch(API_URL);
-    if (r.ok) render(await r.json());
-    else console.warn('Resposta não OK:', r.status);
-  } catch(e) {
-    console.log('Usando dados demo:', e.message);
-  }
-}
-
-demo();
-atualizar();
-setInterval(atualizar, 30000);
+    async function atualizar() { try { const r = await fetch(API_URL); if(r.ok) render(await r.json()); } catch(e) { console.log('Erro:', e); } }
+    setInterval(atualizar, 30000);
+    atualizar();
 </script>
 </body>
 </html>
