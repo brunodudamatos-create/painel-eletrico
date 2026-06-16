@@ -1,6 +1,6 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// MODO SCANNER - DEPURAÇÃO BRUTA
+// SUPER SCANNER - BUSCA MULTI-ENDPOINT
 // ================================================================
 
 const crypto = require('crypto');
@@ -22,41 +22,40 @@ module.exports = async function handler(req, res) {
   const CLIENT_ID          = process.env.TUYA_CLIENT_ID;
   const CLIENT_SECRET      = process.env.TUYA_CLIENT_SECRET;
   const DEVICE_ID_MEDIDOR  = process.env.TUYA_DEVICE_MEDIDOR;
-
-  if (!CLIENT_ID || !CLIENT_SECRET || !DEVICE_ID_MEDIDOR) {
-    return res.status(500).json({ erro: 'Variáveis de ambiente ausentes no Vercel.' });
-  }
-
-  const BASE_URL = 'https://openapi.tuyaus.com'; 
+  const BASE_URL           = 'https://openapi.tuyaus.com'; 
 
   try {
+    // 1. Pega o Token
     const t1 = Date.now().toString();
     const urlToken = '/v1.0/token?grant_type=1';
-    const assToken = gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t1, 'GET', urlToken);
-
-    const resToken = await fetch(`${BASE_URL}${urlToken}`, {
-      headers: { client_id: CLIENT_ID, sign: assToken, t: t1, sign_method: 'HMAC-SHA256' }
+    const reqToken = await fetch(`${BASE_URL}${urlToken}`, {
+      headers: { client_id: CLIENT_ID, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t1, 'GET', urlToken), t: t1, sign_method: 'HMAC-SHA256' }
     });
-    const dadosToken = await resToken.json();
-    const accessToken = dadosToken.result?.access_token;
+    const dadosToken = await reqToken.json();
+    const token = dadosToken.result?.access_token;
 
-    if (!accessToken) throw new Error('Falha de autenticação com a Tuya.');
+    if (!token) throw new Error('Falha de autenticação com a Tuya.');
 
-    const t2 = Date.now().toString();
-    const urlMedidor = `/v1.0/devices/${DEVICE_ID_MEDIDOR}/status`;
-    const assDisp = gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t2, 'GET', urlMedidor, accessToken);
+    // Função auxiliar para bater nos endpoints
+    async function tuyaFetch(url) {
+      const t = Date.now().toString();
+      const req = await fetch(`${BASE_URL}${url}`, {
+        headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t, 'GET', url, token), t: t, sign_method: 'HMAC-SHA256' }
+      });
+      return await req.json();
+    }
 
-    const resMedidor = await fetch(`${BASE_URL}${urlMedidor}`, {
-      headers: { client_id: CLIENT_ID, access_token: accessToken, sign: assDisp, t: t2, sign_method: 'HMAC-SHA256' }
-    });
-    const dadosMed = await resMedidor.json();
-    const med = dadosMed.result || [];
+    // 2. Dispara contra os 3 endpoints possíveis simultaneamente
+    const resV1 = await tuyaFetch(`/v1.0/devices/${DEVICE_ID_MEDIDOR}/status`);
+    const resIoT = await tuyaFetch(`/v1.0/iot-03/devices/${DEVICE_ID_MEDIDOR}/status`);
+    const resShadow = await tuyaFetch(`/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`);
 
-    // MODO SCANNER: Devolve exatamente o que o equipamento mandou
     return res.status(200).json({
-      aviso: "MODO SCANNER ATIVADO - SUCESSO!",
-      instrucao: "Copie todo o conteudo abaixo de 'dados_brutos' e envie no chat.",
-      dados_brutos: med
+      aviso: "SUPER SCANNER CONCLUIDO",
+      instrucao: "Copie todo este JSON e envie no chat",
+      endpoint_v1_basico: resV1.result || resV1,
+      endpoint_iot_industrial: resIoT.result || resIoT,
+      endpoint_device_shadow: resShadow.result || resShadow
     });
 
   } catch (err) {
