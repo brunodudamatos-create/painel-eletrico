@@ -265,8 +265,8 @@ function render(d) {
     chart.data.datasets[0].data.push(el.tensao_a);
     chart.data.datasets[1].data.push(el.tensao_b);
     chart.data.datasets[2].data.push(el.tensao_c);
-    // Ajustado para manter um histórico visível de mais leituras (já que agora demora 5 min cada)
-    if(chart.data.labels.length > 12) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
+   // Agora limita a 288 (24 horas exatas)
+if(chart.data.labels.length > 288) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
     chart.update();
   }
 }
