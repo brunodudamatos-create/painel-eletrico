@@ -82,7 +82,7 @@
   .tval{font-size:1.45rem;font-weight:700}
   .tunit{font-size:.68rem;color:#8b949e}
 
-  /* GRÁFICO */
+  /* GRÁFICOS */
   .chart-container {height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
 
   footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
@@ -173,6 +173,11 @@
   <div class="chart-container">
     <canvas id="tensaoChart"></canvas>
   </div>
+
+  <div class="stitle">📈 Tendência de Correntes (Cuiabá)</div>
+  <div class="chart-container">
+    <canvas id="correnteChart"></canvas>
+  </div>
 </main>
 
 <footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
@@ -181,13 +186,26 @@
 const API_URL = 'https://painel-eletrico.vercel.app/api/dados'; 
 let ultimaAtualizacao = Date.now();
 
-const ctx = document.getElementById('tensaoChart').getContext('2d');
-const chart = new Chart(ctx, {
+// Inicialização do Gráfico de Tensão
+const ctxTensao = document.getElementById('tensaoChart').getContext('2d');
+const tensaoChart = new Chart(ctxTensao, {
     type: 'line',
     data: { labels: [], datasets: [
-        { label: 'Fase A', data: [], borderColor: '#58a6ff', tension: 0.3 },
-        { label: 'Fase B', data: [], borderColor: '#3fb950', tension: 0.3 },
-        { label: 'Fase C', data: [], borderColor: '#f0883e', tension: 0.3 }
+        { label: 'Fase A (V)', data: [], borderColor: '#58a6ff', tension: 0.3 },
+        { label: 'Fase B (V)', data: [], borderColor: '#3fb950', tension: 0.3 },
+        { label: 'Fase C (V)', data: [], borderColor: '#f0883e', tension: 0.3 }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false }
+});
+
+// Inicialização do Gráfico de Corrente
+const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
+const correnteChart = new Chart(ctxCorrente, {
+    type: 'line',
+    data: { labels: [], datasets: [
+        { label: 'Fase A (A)', data: [], borderColor: '#58a6ff', tension: 0.3 },
+        { label: 'Fase B (A)', data: [], borderColor: '#3fb950', tension: 0.3 },
+        { label: 'Fase C (A)', data: [], borderColor: '#f0883e', tension: 0.3 }
     ]},
     options: { responsive: true, maintainAspectRatio: false }
 });
@@ -229,80 +247,4 @@ function render(d) {
     const fi = document.getElementById('ficon');
     const fb = document.getElementById('fbadge');
     if (t.ventilador_ligado) { fi.classList.add('spin'); fb.textContent = 'VENTILADOR ON'; fb.className = 'fbadge'; }
-    else { fi.classList.remove('spin'); fb.textContent = 'VENTILADOR OFF'; fb.className = 'fbadge off'; }
-  }
-
-  const el = d.eletrico;
-  if (el) {
-    set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A');
-    set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2);
-    set('ea', el.energia_a, 2, 'kWh');
-    set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A');
-    set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2);
-    set('eb', el.energia_b, 2, 'kWh');
-    set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A');
-    set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2);
-    set('ec', el.energia_c, 2, 'kWh');
-    set('ptotal', el.potencia_total, 0);
-    set('etotal', el.energia_total, 2);
-    set('freq', el.frequencia, 1);
-    set('fpm', el.fat_pot_medio, 2);
-
-    // Lógica de Alertas Inteligente
-    let alertas = [];
-    const fases = [{n: 'Fase A', v: el.tensao_a}, {n: 'Fase B', v: el.tensao_b}, {n: 'Fase C', v: el.tensao_c}];
-    fases.forEach(f => {
-        if (f.v > 133) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 133 V`);
-        else if (f.v < 111) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
-    });
-
-    if(alertas.length > 0) { abox.classList.add('show'); document.getElementById('alist').innerHTML = alertas.map(a => `<div class="ai">${a}</div>`).join(''); } 
-    else abox.classList.remove('show');
-
-    // Gráfico
-    const agora = new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba'});
-    chart.data.labels.push(agora);
-    chart.data.datasets[0].data.push(el.tensao_a);
-    chart.data.datasets[1].data.push(el.tensao_b);
-    chart.data.datasets[2].data.push(el.tensao_c);
-   // Agora limita a 288 (24 horas exatas)
-if(chart.data.labels.length > 288) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
-    chart.update();
-  }
-}
-
-function dispararAlarmeFalha() {
-    const abox = document.getElementById('abox');
-    abox.classList.add('show', 'falha-rede');
-    document.getElementById('atitle').textContent = '⚠️ ERRO DE SISTEMA';
-    document.getElementById('alist').innerHTML = '<div class="ai" style="color:#f85149; font-weight:bold;">🚨 OFFLINE: Falha na rede, Vercel ou equipamento parou.</div>';
-    
-    const badge = document.getElementById('badge');
-    badge.textContent = '🔴 OFFLINE';
-    badge.className = 'badge offline';
-}
-
-async function atualizar() { 
-  try { 
-    const r = await fetch(API_URL); 
-    if(r.ok) {
-        render(await r.json()); 
-        ultimaAtualizacao = Date.now(); // Atualiza o relógio de segurança
-    } else {
-        throw new Error('API não respondeu com sucesso');
-    }
-  } catch(e) { 
-    console.log('Falha na comunicação:', e); 
-    // Se passar de 11 minutos (660000ms) sem receber dados, dispara o offline
-    if (Date.now() - ultimaAtualizacao > 660000) {
-        dispararAlarmeFalha();
-    }
-  } 
-}
-
-// Atualiza a cada 5 minutos (300.000 milissegundos)
-setInterval(atualizar, 300000);
-atualizar();
-</script>
-</body>
-</html>
+    else
