@@ -150,13 +150,13 @@ function updateCamara(id, data, chart) {
 async function atualizar() {
     try {
         const r = await fetch(API_URL);
-        if(r.ok) {
-            const d = await r.json();
-            document.getElementById('ts').textContent = new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
-            updateCamara('1', d.camara1, c1);
-            updateCamara('2', d.camara2, c2);
-            updateCamara('3', d.camara3, c3);
-        }
+        if(!r.ok) throw new Error('API não encontrada, forçando modo demo'); // <--- Linha adicionada
+        
+        const d = await r.json();
+        document.getElementById('ts').textContent = new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
+        updateCamara('1', d.camara1, c1);
+        updateCamara('2', d.camara2, c2);
+        updateCamara('3', d.camara3, c3);
     } catch(e) {
         console.log('Usando dados demo enquanto não tem API...');
         // DADOS SIMULADOS para ver funcionando antes de comprar
