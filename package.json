@@ -1,7 +1,9 @@
 {
   "name": "painel-eletrico-dashboard",
   "version": "1.0.0",
-  "description": "Dashboard de monitoramento elétrico e temperatura via Tuya",
+  "scripts": {
+    "start": "node server.js" 
+  },
   "engines": {
     "node": "24.x"
   }
