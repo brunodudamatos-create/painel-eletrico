@@ -10,11 +10,11 @@
     body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
     
     header{background:#161b22;padding:15px 30px;border-bottom:1px solid #30363d;}
-    main{padding:20px;max-width:1400px;margin:0 auto}
     
-    /* Retângulo identificando os setores */
+    /* Aumentei a largura máxima para as 4 câmaras caberem perfeitamente na horizontal */
+    main{padding:20px;max-width:1600px;margin:0 auto}
+    
     .secao {
-        margin-bottom:30px; 
         padding:20px; 
         background:#161b22; 
         border-radius:15px; 
@@ -22,10 +22,10 @@
     }
     .secao-titulo {margin-bottom:20px; color:#58a6ff; border-left:4px solid #58a6ff; padding-left:10px;}
 
-    /* GRID FIXO (4 colunas): Garante que a câmara do PDV tenha o exato mesmo tamanho das do Barracão */
+    /* GRID FIXO DE 4 COLUNAS - Coloca as 4 câmaras na mesma linha horizontal */
     .camaras-grid {display:grid; grid-template-columns:repeat(4, 1fr); gap:20px;}
     
-    /* Responsividade para telas menores */
+    /* Para não quebrar no celular ou em telas muito pequenas */
     @media (max-width: 1200px) { .camaras-grid { grid-template-columns:repeat(2, 1fr); } }
     @media (max-width: 768px) { .camaras-grid { grid-template-columns:1fr; } }
 
@@ -34,11 +34,11 @@
     .chart-container {flex-grow: 1; height: 160px; margin: 10px 0;}
     
     .limites-info {display:flex; justify-content:space-between; font-size:0.75rem; margin-top:5px; padding:5px 10px; background:#161b22; border-radius:5px;}
-    .lim-baixo {color:#58a6ff; font-weight:bold;} /* Azul para limite baixo */
-    .lim-alto {color:#d29922; font-weight:bold;}  /* Alaranjado escuro para limite alto */
+    .lim-baixo {color:#58a6ff; font-weight:bold;} 
+    .lim-alto {color:#d29922; font-weight:bold;}  
     
     .alarmes-box {font-size:0.75rem; background:#161b22; padding:10px; border-radius:5px; margin-top:10px;}
-    .evento-alerta {color:#f85149; margin-bottom:2px;} /* Cor vermelha para alertas ativos */
+    .evento-alerta {color:#f85149; margin-bottom:2px;} 
 </style>
 </head>
 <body>
@@ -52,30 +52,24 @@
 
 <main>
     <div class="secao">
-        <h2 class="secao-titulo">Barracão</h2>
-        <div class="camaras-grid" id="grid-barracao">
-            </div>
-    </div>
-
-    <div class="secao">
-        <h2 class="secao-titulo">Câmara Ponto de Venda</h2>
-        <div class="camaras-grid" id="grid-pdv">
+        <h2 class="secao-titulo">Visão Geral das Câmaras</h2>
+        <div class="camaras-grid" id="grid-principal">
             </div>
     </div>
 </main>
 
 <script>
-// Configuração das Câmaras
+// Configuração unificada das 4 câmaras
 const configs = [
-    {id: '1', nome: 'Câmara Barracão 01', grupo: 'grid-barracao'},
-    {id: '2', nome: 'Câmara Barracão 02', grupo: 'grid-barracao'},
-    {id: '3', nome: 'Câmara Barracão 03', grupo: 'grid-barracao'},
-    {id: '4', nome: 'Câmara Ponto de Venda', grupo: 'grid-pdv'}
+    {id: '1', nome: 'Câmara Barracão 01'},
+    {id: '2', nome: 'Câmara Barracão 02'},
+    {id: '3', nome: 'Câmara Barracão 03'},
+    {id: '4', nome: 'Câmara Ponto de Venda'}
 ];
 
 const charts = {};
 
-// Estado inicial das temperaturas (para criar o efeito de gráfico em linha contínua)
+// Valores iniciais para simulação contínua
 const temperaturasAtuais = {
     '1': 4.5,
     '2': 10.0,
@@ -83,9 +77,9 @@ const temperaturasAtuais = {
     '4': 8.0
 };
 
-// 1. Montar HTML de todos os Cards e inicializar os Gráficos
+// 1. Cria os cards no HTML e monta os gráficos
 configs.forEach(c => {
-    document.getElementById(c.grupo).innerHTML += `
+    document.getElementById('grid-principal').innerHTML += `
         <div class="ccard">
             <div style="display:flex; justify-content:space-between"><b>${c.nome}</b></div>
             <div style="font-size:2rem; font-weight:bold" id="t${c.id}">--°C</div>
@@ -111,11 +105,11 @@ configs.forEach(c => {
         data: { 
             labels: [], 
             datasets: [
-                // Linha Principal de Temperatura
-                {label: 'Temp', data: [], borderColor: '#58a6ff', backgroundColor: 'rgba(88, 166, 255, 0.1)', fill: true, tension: 0.3, borderWidth: 2},
-                // Linha Limite Baixo (< 5°C) - Azul Escuro
+                // Linha Principal - CORRIGIDO: fill: false remove a sombra azul claro
+                {label: 'Temp', data: [], borderColor: '#58a6ff', fill: false, tension: 0.3, borderWidth: 2},
+                // Limite Baixo
                 {label: 'Min', data: [], borderColor: '#00008b', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5},
-                // Linha Limite Alto (> 15°C) - Alaranjado Escuro
+                // Limite Alto
                 {label: 'Max', data: [], borderColor: '#d29922', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5}
             ]
         },
@@ -124,13 +118,13 @@ configs.forEach(c => {
             maintainAspectRatio: false, 
             plugins: {legend: {display:false}},
             scales: {
-                y: { min: 0, max: 20 } // Trava o eixo Y para visualizar bem entre 0 e 20 graus
+                y: { min: 0, max: 20 }
             }
         }
     });
 });
 
-// 2. Função para registrar o Log de Eventos (Máximo de 5)
+// 2. Registra os logs de alertas nas caixas
 function registrarEvento(id, msg) {
     const el = document.getElementById('ev' + id);
     let logs = el.innerHTML.includes('Aguardando') ? [] : el.innerHTML.split('<br>');
@@ -142,39 +136,38 @@ function registrarEvento(id, msg) {
     el.innerHTML = logs.join('<br>');
 }
 
-// 3. Função Principal de Atualização
+// 3. Atualiza os dados de TODAS as câmaras simultaneamente
 function atualizar() {
     const agora = new Date().toLocaleTimeString();
 
     configs.forEach(c => {
-        // Lógica de "Tendência" (Sobe ou desce suavemente entre -1 e +1 grau)
         let variacao = (Math.random() * 2) - 1; 
         temperaturasAtuais[c.id] += variacao;
 
-        // Força a temperatura a ficar na faixa solicitada (entre 2°C e 18°C) para testes
+        // Mantém a variação entre 2 e 18 graus para forçar testes de alarme
         if(temperaturasAtuais[c.id] < 2) temperaturasAtuais[c.id] = 2.5;
         if(temperaturasAtuais[c.id] > 18) temperaturasAtuais[c.id] = 17.5;
 
         const tempAtual = temperaturasAtuais[c.id];
         const chart = charts[c.id];
         
-        // Atualiza o Número Grande
+        // Atualiza valor em texto
         document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
-        // Atualiza o Gráfico (Empurra os 3 dados ao mesmo tempo)
+        // Atualiza as 3 linhas do gráfico
         chart.data.labels.push(agora);
-        chart.data.datasets[0].data.push(tempAtual); // Temperatura real
-        chart.data.datasets[1].data.push(5);         // Traça a linha do 5 constante
-        chart.data.datasets[2].data.push(15);        // Traça a linha do 15 constante
+        chart.data.datasets[0].data.push(tempAtual); 
+        chart.data.datasets[1].data.push(5);         
+        chart.data.datasets[2].data.push(15);        
         
-        // Mantém apenas os últimos 20 pontos no gráfico
+        // Mantém 20 pontos de histórico visual
         if(chart.data.labels.length > 20) {
             chart.data.labels.shift();
             chart.data.datasets.forEach(d => d.data.shift());
         }
         chart.update();
 
-        // Disparo de Alarmes e Eventos
+        // Dispara o alerta de texto na caixa de eventos
         if(tempAtual < 5) {
             registrarEvento(c.id, "ALERTA: Baixa Temperatura!");
         } else if(tempAtual > 15) {
@@ -183,8 +176,8 @@ function atualizar() {
     });
 }
 
-// Inicia o processo
-setInterval(atualizar, 4000); // Atualiza a cada 4 segundos para você ver o gráfico se movendo rápido
+// Dispara a cada 4 segundos
+setInterval(atualizar, 4000); 
 atualizar();
 </script>
 </body>
