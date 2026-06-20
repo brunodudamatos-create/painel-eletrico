@@ -12,20 +12,33 @@
     header{background:#161b22;padding:15px 30px;border-bottom:1px solid #30363d;}
     main{padding:20px;max-width:1400px;margin:0 auto}
     
-    .secao {margin-bottom:30px; padding:20px; background:#161b22; border-radius:15px; border:1px solid #30363d;}
+    /* Retângulo identificando os setores */
+    .secao {
+        margin-bottom:30px; 
+        padding:20px; 
+        background:#161b22; 
+        border-radius:15px; 
+        border:2px solid #30363d;
+    }
     .secao-titulo {margin-bottom:20px; color:#58a6ff; border-left:4px solid #58a6ff; padding-left:10px;}
 
-    /* GRID ALINHADO: Garante que todos os cards tenham o mesmo tamanho */
-    .camaras-grid {display:grid; grid-template-columns:repeat(2, 1fr); gap:20px;}
+    /* GRID FIXO (4 colunas): Garante que a câmara do PDV tenha o exato mesmo tamanho das do Barracão */
+    .camaras-grid {display:grid; grid-template-columns:repeat(4, 1fr); gap:20px;}
+    
+    /* Responsividade para telas menores */
+    @media (max-width: 1200px) { .camaras-grid { grid-template-columns:repeat(2, 1fr); } }
+    @media (max-width: 768px) { .camaras-grid { grid-template-columns:1fr; } }
+
     .ccard {background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:15px; display:flex; flex-direction:column;}
     
-    .chart-container {flex-grow: 1; height: 150px; margin: 10px 0;}
-    .alarmes-box {font-size:0.75rem; background:#161b22; padding:10px; border-radius:5px; margin-top:10px;}
+    .chart-container {flex-grow: 1; height: 160px; margin: 10px 0;}
     
-    /* Destaque para limites */
-    .limites-info {display:flex; justify-content:space-between; font-size:0.7rem; margin-top:5px; padding:5px; background:#0d1117;}
-    .lim-baixo {color:#58a6ff; font-weight:bold;}
-    .lim-alto {color:#e3893a; font-weight:bold;}
+    .limites-info {display:flex; justify-content:space-between; font-size:0.75rem; margin-top:5px; padding:5px 10px; background:#161b22; border-radius:5px;}
+    .lim-baixo {color:#58a6ff; font-weight:bold;} /* Azul para limite baixo */
+    .lim-alto {color:#d29922; font-weight:bold;}  /* Alaranjado escuro para limite alto */
+    
+    .alarmes-box {font-size:0.75rem; background:#161b22; padding:10px; border-radius:5px; margin-top:10px;}
+    .evento-alerta {color:#f85149; margin-bottom:2px;} /* Cor vermelha para alertas ativos */
 </style>
 </head>
 <body>
@@ -39,88 +52,139 @@
 
 <main>
     <div class="secao">
-        <h2 class="secao-titulo">Monitoramento Geral</h2>
-        <div class="camaras-grid" id="grid-principal">
+        <h2 class="secao-titulo">Barracão</h2>
+        <div class="camaras-grid" id="grid-barracao">
+            </div>
+    </div>
+
+    <div class="secao">
+        <h2 class="secao-titulo">Câmara Ponto de Venda</h2>
+        <div class="camaras-grid" id="grid-pdv">
             </div>
     </div>
 </main>
 
 <script>
+// Configuração das Câmaras
 const configs = [
-    {id: '1', nome: 'Câmara Barracão 01', mostrarLimites: false},
-    {id: '2', nome: 'Câmara Barracão 02', mostrarLimites: false},
-    {id: '3', nome: 'Câmara Barracão 03', mostrarLimites: true},
-    {id: '4', nome: 'Câmara PDV', mostrarLimites: true}
+    {id: '1', nome: 'Câmara Barracão 01', grupo: 'grid-barracao'},
+    {id: '2', nome: 'Câmara Barracão 02', grupo: 'grid-barracao'},
+    {id: '3', nome: 'Câmara Barracão 03', grupo: 'grid-barracao'},
+    {id: '4', nome: 'Câmara Ponto de Venda', grupo: 'grid-pdv'}
 ];
 
 const charts = {};
 
+// Estado inicial das temperaturas (para criar o efeito de gráfico em linha contínua)
+const temperaturasAtuais = {
+    '1': 4.5,
+    '2': 10.0,
+    '3': 15.5,
+    '4': 8.0
+};
+
+// 1. Montar HTML de todos os Cards e inicializar os Gráficos
 configs.forEach(c => {
-    document.getElementById('grid-principal').innerHTML += `
+    document.getElementById(c.grupo).innerHTML += `
         <div class="ccard">
             <div style="display:flex; justify-content:space-between"><b>${c.nome}</b></div>
             <div style="font-size:2rem; font-weight:bold" id="t${c.id}">--°C</div>
+            
             <div class="chart-container"><canvas id="chart${c.id}"></canvas></div>
-            ${c.mostrarLimites ? `<div class="limites-info">
-                <span class="lim-baixo">Min: 5°C</span>
-                <span class="lim-alto">Max: 15°C</span>
-            </div>` : ''}
+            
+            <div class="limites-info">
+                <span class="lim-baixo">▼ Min: 5°C</span>
+                <span class="lim-alto">▲ Max: 15°C</span>
+            </div>
+            
             <div class="alarmes-box">
-                <div style="color:#8b949e">Últimos Eventos:</div>
-                <div id="ev${c.id}">Aguardando...</div>
+                <div style="color:#8b949e; margin-bottom:5px; font-weight:bold;">Últimos Eventos:</div>
+                <div id="ev${c.id}">Aguardando dados...</div>
             </div>
         </div>
     `;
 
     const ctx = document.getElementById('chart'+c.id).getContext('2d');
-    const datasets = [{label: 'Temp', data: [], borderColor: '#58a6ff', fill: false}];
     
-    if(c.mostrarLimites) {
-        datasets.push({label: 'Min', data: [], borderColor: '#58a6ff', borderDash: [5,5], pointRadius: 0});
-        datasets.push({label: 'Max', data: [], borderColor: '#e3893a', borderDash: [5,5], pointRadius: 0});
-    }
-
     charts[c.id] = new Chart(ctx, {
         type: 'line',
-        data: { labels: [], datasets: datasets },
-        options: { responsive: true, maintainAspectRatio: false, plugins: {legend: {display:false}} }
+        data: { 
+            labels: [], 
+            datasets: [
+                // Linha Principal de Temperatura
+                {label: 'Temp', data: [], borderColor: '#58a6ff', backgroundColor: 'rgba(88, 166, 255, 0.1)', fill: true, tension: 0.3, borderWidth: 2},
+                // Linha Limite Baixo (< 5°C) - Azul Escuro
+                {label: 'Min', data: [], borderColor: '#00008b', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5},
+                // Linha Limite Alto (> 15°C) - Alaranjado Escuro
+                {label: 'Max', data: [], borderColor: '#d29922', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5}
+            ]
+        },
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            plugins: {legend: {display:false}},
+            scales: {
+                y: { min: 0, max: 20 } // Trava o eixo Y para visualizar bem entre 0 e 20 graus
+            }
+        }
     });
 });
 
+// 2. Função para registrar o Log de Eventos (Máximo de 5)
 function registrarEvento(id, msg) {
     const el = document.getElementById('ev' + id);
     let logs = el.innerHTML.includes('Aguardando') ? [] : el.innerHTML.split('<br>');
-    logs.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
+    
+    const time = new Date().toLocaleTimeString();
+    logs.unshift(`<span class="evento-alerta">[${time}] ${msg}</span>`);
+    
     if(logs.length > 5) logs.pop();
     el.innerHTML = logs.join('<br>');
 }
 
+// 3. Função Principal de Atualização
 function atualizar() {
+    const agora = new Date().toLocaleTimeString();
+
     configs.forEach(c => {
-        const temp = 2 + (Math.random() * 16);
+        // Lógica de "Tendência" (Sobe ou desce suavemente entre -1 e +1 grau)
+        let variacao = (Math.random() * 2) - 1; 
+        temperaturasAtuais[c.id] += variacao;
+
+        // Força a temperatura a ficar na faixa solicitada (entre 2°C e 18°C) para testes
+        if(temperaturasAtuais[c.id] < 2) temperaturasAtuais[c.id] = 2.5;
+        if(temperaturasAtuais[c.id] > 18) temperaturasAtuais[c.id] = 17.5;
+
+        const tempAtual = temperaturasAtuais[c.id];
         const chart = charts[c.id];
         
-        document.getElementById('t'+c.id).textContent = temp.toFixed(1) + '°C';
+        // Atualiza o Número Grande
+        document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
-        chart.data.labels.push(new Date().toLocaleTimeString());
-        chart.data.datasets[0].data.push(temp);
-        if(c.mostrarLimites) {
-            chart.data.datasets[1].data.push(5);
-            chart.data.datasets[2].data.push(15);
-        }
+        // Atualiza o Gráfico (Empurra os 3 dados ao mesmo tempo)
+        chart.data.labels.push(agora);
+        chart.data.datasets[0].data.push(tempAtual); // Temperatura real
+        chart.data.datasets[1].data.push(5);         // Traça a linha do 5 constante
+        chart.data.datasets[2].data.push(15);        // Traça a linha do 15 constante
         
+        // Mantém apenas os últimos 20 pontos no gráfico
         if(chart.data.labels.length > 20) {
             chart.data.labels.shift();
             chart.data.datasets.forEach(d => d.data.shift());
         }
         chart.update();
 
-        if(temp < 5) registrarEvento(c.id, "ALERTA: Temp Baixa!");
-        else if(temp > 15) registrarEvento(c.id, "ALERTA: Temp Alta!");
+        // Disparo de Alarmes e Eventos
+        if(tempAtual < 5) {
+            registrarEvento(c.id, "ALERTA: Baixa Temperatura!");
+        } else if(tempAtual > 15) {
+            registrarEvento(c.id, "ALERTA: Alta Temperatura!");
+        }
     });
 }
 
-setInterval(atualizar, 5000);
+// Inicia o processo
+setInterval(atualizar, 4000); // Atualiza a cada 4 segundos para você ver o gráfico se movendo rápido
 atualizar();
 </script>
 </body>
