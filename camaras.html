@@ -21,7 +21,6 @@
     }
     .secao-titulo {margin-bottom:20px; color:#58a6ff; border-left:4px solid #58a6ff; padding-left:10px;}
 
-    /* GRID FIXO DE 4 COLUNAS */
     .camaras-grid {display:grid; grid-template-columns:repeat(4, 1fr); gap:20px;}
     
     @media (max-width: 1200px) { .camaras-grid { grid-template-columns:repeat(2, 1fr); } }
@@ -37,6 +36,20 @@
     
     .alarmes-box {font-size:0.75rem; background:#161b22; padding:10px; border-radius:5px; margin-top:10px;}
     .evento-alerta {color:#f85149; margin-bottom:2px;} 
+
+    /* Estilos para o novo indicador de status */
+    .status-container {
+        margin-top: 15px;
+        padding: 10px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: bold;
+        transition: background-color 0.3s ease;
+    }
+    /* Classes dinâmicas que serão aplicadas pelo JavaScript */
+    .status-normal { background-color: rgba(46, 160, 67, 0.2); border: 1px solid #2ea043; color: #3fb950; }
+    .status-alto { background-color: rgba(248, 81, 73, 0.2); border: 1px solid #f85149; color: #ff7b72; }
+    .status-baixo { background-color: rgba(88, 166, 255, 0.2); border: 1px solid #58a6ff; color: #79c0ff; }
 </style>
 </head>
 <body>
@@ -66,7 +79,6 @@ const configs = [
 
 const charts = {};
 
-// Temperaturas iniciais aleatórias entre 1 e 20 para começar
 const temperaturasAtuais = {
     '1': 4.5,
     '2': 10.0,
@@ -74,7 +86,7 @@ const temperaturasAtuais = {
     '4': 8.0
 };
 
-// 1. PRIMEIRO: Construir todo o HTML de uma vez para não destruir os gráficos
+// 1. Construir HTML (Agora com a div de status)
 let htmlCards = '';
 configs.forEach(c => {
     htmlCards += `
@@ -93,14 +105,17 @@ configs.forEach(c => {
                 <div style="color:#8b949e; margin-bottom:5px; font-weight:bold;">Últimos Eventos:</div>
                 <div id="ev${c.id}">Aguardando dados...</div>
             </div>
+
+            <div id="status${c.id}" class="status-container status-normal">
+                Verificando Condição...
+            </div>
         </div>
     `;
 });
 
-// Injeta o HTML na tela de uma única vez
 document.getElementById('grid-principal').innerHTML = htmlCards;
 
-// 2. SEGUNDO: Agora que o HTML existe, inicializamos os 4 gráficos com Chart.js
+// 2. Inicializar Gráficos
 configs.forEach(c => {
     const ctx = document.getElementById('chart'+c.id).getContext('2d');
     
@@ -119,7 +134,6 @@ configs.forEach(c => {
             maintainAspectRatio: false, 
             plugins: {legend: {display:false}},
             scales: {
-                // Deixa o gráfico se adequar dinamicamente, sugerindo a escala base de 0 a 22
                 y: { suggestedMin: 0, suggestedMax: 22 }
             }
         }
@@ -138,48 +152,54 @@ function registrarEvento(id, msg) {
     el.innerHTML = logs.join('<br>');
 }
 
-// 4. Função de Atualização (Variação entre 1 e 20 graus)
+// 4. Função de Atualização (com lógica de Status Visual)
 function atualizar() {
     const agora = new Date().toLocaleTimeString();
 
     configs.forEach(c => {
-        // Simula subida ou descida suave de temperatura
         let variacao = (Math.random() * 2) - 1; 
         temperaturasAtuais[c.id] += variacao;
 
-        // Limita estritamente entre 1°C e 20°C
         if(temperaturasAtuais[c.id] < 1) temperaturasAtuais[c.id] = 1.5;
         if(temperaturasAtuais[c.id] > 20) temperaturasAtuais[c.id] = 19.5;
 
         const tempAtual = temperaturasAtuais[c.id];
         const chart = charts[c.id];
         
-        // Atualiza o texto da temperatura na tela
         document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
-        // Atualiza as linhas do gráfico
         chart.data.labels.push(agora);
         chart.data.datasets[0].data.push(tempAtual); 
         chart.data.datasets[1].data.push(5);         
         chart.data.datasets[2].data.push(15);        
         
-        // Limpa o histórico visual para mostrar apenas os últimos 20 pontos
         if(chart.data.labels.length > 20) {
             chart.data.labels.shift();
             chart.data.datasets.forEach(d => d.data.shift());
         }
         chart.update();
 
-        // Dispara alarmes se sair do limite
+        // LÓGICA DO NOVO INDICADOR DE STATUS
+        const statusBox = document.getElementById('status'+c.id);
+
         if(tempAtual < 5) {
             registrarEvento(c.id, "ALERTA: Baixa Temperatura!");
+            // Muda para azul
+            statusBox.className = "status-container status-baixo";
+            statusBox.innerHTML = "❄️ ALERTA: TEMPERATURA BAIXA 🧊";
         } else if(tempAtual > 15) {
             registrarEvento(c.id, "ALERTA: Alta Temperatura!");
+            // Muda para vermelho
+            statusBox.className = "status-container status-alto";
+            statusBox.innerHTML = "🔴 ALERTA: TEMPERATURA ALTA 🔥";
+        } else {
+            // Volta para verde (Normal)
+            statusBox.className = "status-container status-normal";
+            statusBox.innerHTML = "🟢 CONDIÇÃO NORMAL";
         }
     });
 }
 
-// Atualiza a cada 4 segundos
 setInterval(atualizar, 4000); 
 atualizar();
 </script>
