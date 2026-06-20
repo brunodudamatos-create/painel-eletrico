@@ -11,7 +11,6 @@
     
     header{background:#161b22;padding:15px 30px;border-bottom:1px solid #30363d;}
     
-    /* Aumentei a largura máxima para as 4 câmaras caberem perfeitamente na horizontal */
     main{padding:20px;max-width:1600px;margin:0 auto}
     
     .secao {
@@ -22,10 +21,9 @@
     }
     .secao-titulo {margin-bottom:20px; color:#58a6ff; border-left:4px solid #58a6ff; padding-left:10px;}
 
-    /* GRID FIXO DE 4 COLUNAS - Coloca as 4 câmaras na mesma linha horizontal */
+    /* GRID FIXO DE 4 COLUNAS */
     .camaras-grid {display:grid; grid-template-columns:repeat(4, 1fr); gap:20px;}
     
-    /* Para não quebrar no celular ou em telas muito pequenas */
     @media (max-width: 1200px) { .camaras-grid { grid-template-columns:repeat(2, 1fr); } }
     @media (max-width: 768px) { .camaras-grid { grid-template-columns:1fr; } }
 
@@ -59,7 +57,6 @@
 </main>
 
 <script>
-// Configuração unificada das 4 câmaras
 const configs = [
     {id: '1', nome: 'Câmara Barracão 01'},
     {id: '2', nome: 'Câmara Barracão 02'},
@@ -69,17 +66,18 @@ const configs = [
 
 const charts = {};
 
-// Valores iniciais para simulação contínua
+// Temperaturas iniciais aleatórias entre 1 e 20 para começar
 const temperaturasAtuais = {
     '1': 4.5,
     '2': 10.0,
-    '3': 15.5,
+    '3': 18.5,
     '4': 8.0
 };
 
-// 1. Cria os cards no HTML e monta os gráficos
+// 1. PRIMEIRO: Construir todo o HTML de uma vez para não destruir os gráficos
+let htmlCards = '';
 configs.forEach(c => {
-    document.getElementById('grid-principal').innerHTML += `
+    htmlCards += `
         <div class="ccard">
             <div style="display:flex; justify-content:space-between"><b>${c.nome}</b></div>
             <div style="font-size:2rem; font-weight:bold" id="t${c.id}">--°C</div>
@@ -97,7 +95,13 @@ configs.forEach(c => {
             </div>
         </div>
     `;
+});
 
+// Injeta o HTML na tela de uma única vez
+document.getElementById('grid-principal').innerHTML = htmlCards;
+
+// 2. SEGUNDO: Agora que o HTML existe, inicializamos os 4 gráficos com Chart.js
+configs.forEach(c => {
     const ctx = document.getElementById('chart'+c.id).getContext('2d');
     
     charts[c.id] = new Chart(ctx, {
@@ -105,11 +109,8 @@ configs.forEach(c => {
         data: { 
             labels: [], 
             datasets: [
-                // Linha Principal - CORRIGIDO: fill: false remove a sombra azul claro
                 {label: 'Temp', data: [], borderColor: '#58a6ff', fill: false, tension: 0.3, borderWidth: 2},
-                // Limite Baixo
                 {label: 'Min', data: [], borderColor: '#00008b', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5},
-                // Limite Alto
                 {label: 'Max', data: [], borderColor: '#d29922', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5}
             ]
         },
@@ -118,13 +119,14 @@ configs.forEach(c => {
             maintainAspectRatio: false, 
             plugins: {legend: {display:false}},
             scales: {
-                y: { min: 0, max: 20 }
+                // Deixa o gráfico se adequar dinamicamente, sugerindo a escala base de 0 a 22
+                y: { suggestedMin: 0, suggestedMax: 22 }
             }
         }
     });
 });
 
-// 2. Registra os logs de alertas nas caixas
+// 3. Função de Eventos
 function registrarEvento(id, msg) {
     const el = document.getElementById('ev' + id);
     let logs = el.innerHTML.includes('Aguardando') ? [] : el.innerHTML.split('<br>');
@@ -136,38 +138,39 @@ function registrarEvento(id, msg) {
     el.innerHTML = logs.join('<br>');
 }
 
-// 3. Atualiza os dados de TODAS as câmaras simultaneamente
+// 4. Função de Atualização (Variação entre 1 e 20 graus)
 function atualizar() {
     const agora = new Date().toLocaleTimeString();
 
     configs.forEach(c => {
+        // Simula subida ou descida suave de temperatura
         let variacao = (Math.random() * 2) - 1; 
         temperaturasAtuais[c.id] += variacao;
 
-        // Mantém a variação entre 2 e 18 graus para forçar testes de alarme
-        if(temperaturasAtuais[c.id] < 2) temperaturasAtuais[c.id] = 2.5;
-        if(temperaturasAtuais[c.id] > 18) temperaturasAtuais[c.id] = 17.5;
+        // Limita estritamente entre 1°C e 20°C
+        if(temperaturasAtuais[c.id] < 1) temperaturasAtuais[c.id] = 1.5;
+        if(temperaturasAtuais[c.id] > 20) temperaturasAtuais[c.id] = 19.5;
 
         const tempAtual = temperaturasAtuais[c.id];
         const chart = charts[c.id];
         
-        // Atualiza valor em texto
+        // Atualiza o texto da temperatura na tela
         document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
-        // Atualiza as 3 linhas do gráfico
+        // Atualiza as linhas do gráfico
         chart.data.labels.push(agora);
         chart.data.datasets[0].data.push(tempAtual); 
         chart.data.datasets[1].data.push(5);         
         chart.data.datasets[2].data.push(15);        
         
-        // Mantém 20 pontos de histórico visual
+        // Limpa o histórico visual para mostrar apenas os últimos 20 pontos
         if(chart.data.labels.length > 20) {
             chart.data.labels.shift();
             chart.data.datasets.forEach(d => d.data.shift());
         }
         chart.update();
 
-        // Dispara o alerta de texto na caixa de eventos
+        // Dispara alarmes se sair do limite
         if(tempAtual < 5) {
             registrarEvento(c.id, "ALERTA: Baixa Temperatura!");
         } else if(tempAtual > 15) {
@@ -176,7 +179,7 @@ function atualizar() {
     });
 }
 
-// Dispara a cada 4 segundos
+// Atualiza a cada 4 segundos
 setInterval(atualizar, 4000); 
 atualizar();
 </script>
