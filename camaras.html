@@ -3,176 +3,121 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>❄️ Câmaras Frias — Monitor</title>
+<title>❄️ Monitor Câmaras - Brasileira Distribuidora</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+    
+    header{background:#161b22;padding:15px 30px;border-bottom:1px solid #30363d;}
+    main{padding:20px;max-width:1400px;margin:0 auto}
+    
+    .secao {margin-bottom:30px; padding:20px; background:#161b22; border-radius:15px; border:1px solid #30363d;}
+    .secao-titulo {margin-bottom:20px; color:#58a6ff; border-left:4px solid #58a6ff; padding-left:10px;}
 
-  /* HEADER */
-  header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
-  header h1{font-size:1.05rem;font-weight:600;color:#58a6ff}
-  .hright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  .ts{font-size:.7rem;color:#8b949e}
-  .badge{padding:4px 12px;border-radius:20px;font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:5px;background:#1a4731;color:#3fb950;border:1px solid #238636}
-  .badge.alerta{background:#3d1f00;color:#f0883e;border-color:#d29922}
-  .badge.offline{background:#3d1f00;color:#f85149;border-color:#f85149}
-  .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-  
-  .btn-nav {color:#58a6ff; text-decoration:none; font-size:0.75rem; border:1px solid #1f6feb; padding:5px 12px; border-radius:5px; transition: 0.2s;}
-  .btn-nav:hover {background: #1f6feb; color: white;}
-
-  main{padding:18px 28px;max-width:1400px;margin:0 auto}
-
-  /* CARDS DAS CÂMARAS */
-  .camaras-grid {display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; margin-bottom: 25px;}
-  .ccard {background:linear-gradient(135deg,#1c2a3a,#162032); border:1px solid #30363d; border-radius:14px; padding:20px;}
-  .ctitle {font-size:1rem; font-weight:600; color:#58a6ff; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;}
-  
-  .c-info {display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:15px;}
-  .tnum {font-size:3.5rem; font-weight:700; line-height:1; color:#e6edf3;}
-  .tnum span {font-size:1.2rem; color:#8b949e;}
-  .tnum.alta {color:#f85149;} /* Alarme de temperatura alta */
-  
-  .c-detalhes {font-size:0.75rem; color:#8b949e; text-align:right;}
-  .c-detalhes b {color:#e6edf3;}
-  
-  .status-badge {font-size:.7rem; padding:3px 10px; border-radius:12px; background:#21262d; border:1px solid #30363d;}
-  .status-badge.resfriando {background:#051d4d; color:#58a6ff; border-color:#1f6feb;}
-
-  /* GRÁFICOS */
-  .chart-container {height: 200px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
-
-  footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
-
-  @media(max-width:900px){
-    .camaras-grid{grid-template-columns:1fr}
-  }
+    .camaras-grid {display:grid; grid-template-columns:repeat(auto-fit, minmax(350px, 1fr)); gap:20px;}
+    .ccard {background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:15px;}
+    
+    .chart-container {height: 150px; margin: 10px 0;}
+    .alarmes-box {font-size:0.75rem; background:#161b22; padding:10px; border-radius:5px; margin-top:10px;}
+    .alerta-item {color:#f0883e; margin-bottom:2px;}
+    
+    .status-badge {font-size:0.7rem; padding:2px 8px; border-radius:10px; background:#21262d;}
 </style>
 </head>
 <body>
 
-<header>
-  <h1>❄️ Monitor de Câmaras Frias - Brasileira Distribuidora de Frutas</h1>
-  <div class="hright">
-    <a href="index.html" class="btn-nav">⚡ Ver Painel Elétrico</a>
-    <span class="ts" id="ts">Conectando...</span>
-    <div class="badge" id="badge">🟢 NORMAL</div>
-  </div>
-</header>
+<header><h1>❄️ Monitor de Câmaras Frias</h1></header>
 
 <main>
-  <div class="camaras-grid">
-    <div class="ccard">
-      <div class="ctitle">Câmara Fria 01 <span class="status-badge" id="st1">Parado</span></div>
-      <div class="c-info">
-        <div class="tnum" id="t1">--<span>°C</span></div>
-        <div class="c-detalhes">
-          <div>Setpoint: <b id="set1">--°C</b></div>
-          <div>Umidade: <b id="h1">--%</b></div>
-        </div>
-      </div>
-      <div class="chart-container"><canvas id="chart1"></canvas></div>
+    <div class="secao">
+        <h2 class="secao-titulo">Barracão</h2>
+        <div class="camaras-grid" id="grid-barracao">
+            </div>
     </div>
 
-    <div class="ccard">
-      <div class="ctitle">Câmara Fria 02 <span class="status-badge" id="st2">Parado</span></div>
-      <div class="c-info">
-        <div class="tnum" id="t2">--<span>°C</span></div>
-        <div class="c-detalhes">
-          <div>Setpoint: <b id="set2">--°C</b></div>
-          <div>Umidade: <b id="h2">--%</b></div>
-        </div>
-      </div>
-      <div class="chart-container"><canvas id="chart2"></canvas></div>
+    <div class="secao">
+        <h2 class="secao-titulo">Câmara Ponto de Venda</h2>
+        <div class="camaras-grid" id="grid-pdv">
+            </div>
     </div>
-
-    <div class="ccard">
-      <div class="ctitle">Câmara Fria 03 <span class="status-badge" id="st3">Parado</span></div>
-      <div class="c-info">
-        <div class="tnum" id="t3">--<span>°C</span></div>
-        <div class="c-detalhes">
-          <div>Setpoint: <b id="set3">--°C</b></div>
-          <div>Umidade: <b id="h3">--%</b></div>
-        </div>
-      </div>
-      <div class="chart-container"><canvas id="chart3"></canvas></div>
-    </div>
-  </div>
 </main>
 
-<footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
-
 <script>
-// API que criaremos no próximo passo
-const API_URL = '/api/camaras'; 
+const API_URL = '/api/camaras';
+const configs = [
+    {id: '1', nome: 'Câmara Barracão 01', grupo: 'grid-barracao'},
+    {id: '2', nome: 'Câmara Barracão 02', grupo: 'grid-barracao'},
+    {id: '3', nome: 'Câmara Barracão 03', grupo: 'grid-barracao'},
+    {id: '4', nome: 'Câmara PDV', grupo: 'grid-pdv'}
+];
 
-// Inicializa os 3 Gráficos
-function initChart(ctxId, color) {
-    return new Chart(document.getElementById(ctxId).getContext('2d'), {
+const charts = {};
+
+// Montar cards
+configs.forEach(c => {
+    document.getElementById(c.grupo).innerHTML += `
+        <div class="ccard">
+            <div style="display:flex; justify-content:space-between"><b>${c.nome}</b> <span id="st${c.id}">--</span></div>
+            <div style="font-size:2rem; font-weight:bold" id="t${c.id}">--°C</div>
+            <div class="chart-container"><canvas id="chart${c.id}"></canvas></div>
+            <div class="alarmes-box">
+                <div style="color:#8b949e">Últimos Eventos:</div>
+                <div id="ev${c.id}">Nenhum evento.</div>
+            </div>
+        </div>
+    `;
+    // Inicializa Gráficos com linhas de limite
+    const ctx = document.getElementById('chart'+c.id).getContext('2d');
+    charts[c.id] = new Chart(ctx, {
         type: 'line',
-        data: { labels: [], datasets: [{ label: 'Temp °C', data: [], borderColor: color, tension: 0.3, backgroundColor: color + '22', fill: true }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        data: { labels: [], datasets: [
+            {label: 'Temp', data: [], borderColor: '#58a6ff', fill: false},
+            {label: 'Limite Baixo (<5)', data: [], borderColor: '#00008b', borderDash: [5,5], pointRadius: 0},
+            {label: 'Limite Alto (>15)', data: [], borderColor: '#8b4513', borderDash: [5,5], pointRadius: 0}
+        ]},
+        options: { responsive: true, maintainAspectRatio: false, plugins: {legend: {display:false}} }
     });
-}
+});
 
-const c1 = initChart('chart1', '#58a6ff');
-const c2 = initChart('chart2', '#3fb950');
-const c3 = initChart('chart3', '#f0883e');
-
-function updateCamara(id, data, chart) {
-    const tEl = document.getElementById('t' + id);
-    tEl.innerHTML = data.temp.toFixed(1) + '<span>°C</span>';
-    
-    // Alarme visual se temperatura passar do limite (ex: 5 graus acima do setpoint)
-    tEl.className = data.temp > (data.setpoint + 5) ? 'tnum alta' : 'tnum';
-
-    document.getElementById('set' + id).textContent = data.setpoint.toFixed(1) + '°C';
-    document.getElementById('h' + id).textContent = data.umidade + '%';
-
-    const stEl = document.getElementById('st' + id);
-    if(data.refrigerando) {
-        stEl.textContent = '❄️ Resfriando';
-        stEl.className = 'status-badge resfriando';
-    } else {
-        stEl.textContent = 'Parado';
-        stEl.className = 'status-badge';
-    }
-
-    const agora = new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba'});
-    chart.data.labels.push(agora);
-    chart.data.datasets[0].data.push(data.temp);
-    if(chart.data.labels.length > 288) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
-    chart.update();
+function registrarEvento(id, msg) {
+    const el = document.getElementById('ev' + id);
+    let logs = el.innerHTML.split('<br>').filter(Boolean);
+    logs.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
+    if(logs.length > 5) logs.pop();
+    el.innerHTML = logs.join('<br>');
 }
 
 async function atualizar() {
-    try {
-        const r = await fetch(API_URL);
-        if(!r.ok) throw new Error('API não encontrada, forçando modo demo'); // <--- Linha adicionada
+    configs.forEach(c => {
+        // Simulação de temperatura entre 2 e 18 graus
+        const temp = 2 + (Math.random() * 16);
+        const chart = charts[c.id];
         
-        const d = await r.json();
-        document.getElementById('ts').textContent = new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
-        updateCamara('1', d.camara1, c1);
-        updateCamara('2', d.camara2, c2);
-        updateCamara('3', d.camara3, c3);
-    } catch(e) {
-        console.log('Usando dados demo enquanto não tem API...');
-        // DADOS SIMULADOS para ver funcionando antes de comprar
-        const demo = {
-            camara1: { temp: 2.1 + (Math.random() - 0.5), setpoint: 2.0, umidade: 85, refrigerando: true },
-            camara2: { temp: -18.5 + (Math.random() - 0.5), setpoint: -18.0, umidade: 60, refrigerando: false },
-            camara3: { temp: 4.8 + (Math.random() - 0.5), setpoint: 4.0, umidade: 78, refrigerando: true }
-        };
-        document.getElementById('ts').textContent = new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
-        updateCamara('1', demo.camara1, c1);
-        updateCamara('2', demo.camara2, c2);
-        updateCamara('3', demo.camara3, c3);
-    }
+        document.getElementById('t'+c.id).textContent = temp.toFixed(1) + '°C';
+        
+        // Atualiza Gráfico
+        chart.data.labels.push(new Date().toLocaleTimeString());
+        chart.data.datasets[0].data.push(temp);
+        chart.data.datasets[1].data.push(5);  // Limite baixo
+        chart.data.datasets[2].data.push(15); // Limite alto
+        
+        if(chart.data.labels.length > 20) {
+            chart.data.labels.shift();
+            chart.data.datasets.forEach(d => d.data.shift());
+        }
+        chart.update();
+
+        // Lógica de Alarmes
+        if(temp < 5) {
+            registrarEvento(c.id, "ALERTA: Temp Baixa!");
+        } else if(temp > 15) {
+            registrarEvento(c.id, "ALERTA: Temp Alta!");
+        }
+    });
 }
 
-setInterval(atualizar, 300000);
+setInterval(atualizar, 5000);
 atualizar();
 </script>
 </body>
