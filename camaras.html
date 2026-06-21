@@ -17,6 +17,7 @@
         background:#161b22; 
         border-radius:15px; 
         border:2px solid #30363d;
+        margin-bottom: 20px;
     }
     .secao-titulo {margin-bottom:20px; color:#58a6ff; border-left:4px solid #58a6ff; padding-left:10px;}
 
@@ -28,6 +29,7 @@
     .ccard {background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:15px; display:flex; flex-direction:column;}
     
     .chart-container {flex-grow: 1; height: 160px; margin: 10px 0;}
+    .chart-container-ambiente {height: 220px; margin-top: 15px;}
     
     .limites-info {display:flex; justify-content:space-between; font-size:0.75rem; margin-top:5px; padding:5px 10px; background:#161b22; border-radius:5px;}
     .lim-baixo {color:#58a6ff; font-weight:bold;} 
@@ -43,11 +45,20 @@
         border-radius: 8px;
         text-align: center;
         font-weight: bold;
-        transition: background-color 0.3s ease;
     }
     .status-normal { background-color: rgba(46, 160, 67, 0.2); border: 1px solid #2ea043; color: #3fb950; }
     .status-alto { background-color: rgba(248, 81, 73, 0.2); border: 1px solid #f85149; color: #ff7b72; }
     .status-baixo { background-color: rgba(88, 166, 255, 0.2); border: 1px solid #58a6ff; color: #79c0ff; }
+
+    .painel-ambiente {
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        background: #0d1117;
+        border: 1px solid #30363d;
+        padding: 15px;
+        border-radius: 10px;
+    }
 </style>
 </head>
 <body>
@@ -65,6 +76,23 @@
         <div class="camaras-grid" id="grid-principal">
             </div>
     </div>
+
+    <div class="secao">
+        <h2 class="secao-titulo">Condição Térmica Externa (Cuiabá - MT)</h2>
+        <div class="painel-ambiente">
+            <div style="text-align: center; min-width: 180px; padding-right: 20px; border-right: 1px solid #30363d;">
+                <div style="color: #8b949e; font-size: 0.85rem; font-weight: bold; margin-bottom: 5px;">AMBIENTE AGORA</div>
+                <div id="temp-externa-txt" style="font-size: 3rem; font-weight: bold; color: #ff9f43;">--°C</div>
+                <div style="color: #8b949e; font-size: 0.7rem; margin-top: 5px;">Sincronizado via Open-Meteo</div>
+            </div>
+            <div style="color: #8b949e; font-size: 0.85rem; line-height: 1.5;">
+                <strong>Análise de Impacto Térmico:</strong> Use o gráfico abaixo para correlacionar picos de temperatura externa em Cuiabá com o aumento de eventos de alarme ou perda de eficiência nos compressores industriais durante horários críticos.
+            </div>
+        </div>
+        <div class="chart-container-ambiente">
+            <canvas id="chartAmbiente"></canvas>
+        </div>
+    </div>
 </main>
 
 <script>
@@ -76,27 +104,21 @@ const configs = [
 ];
 
 const charts = {};
+let chartAmbiente = null;
 const temperaturasAtuais = {};
-const estadosCamaras = {}; // Armazena o estado atual: 'NORMAL', 'ALTA' ou 'BAIXA'
+const estadosCamaras = {}; 
 
-// Função para gerar o histórico das últimas 24 horas com simulação de perda de rendimento noturno
+// Gerador de histórico das câmaras
 function gerarHistorico24h(baseTemp) {
-    const dataTemp = [];
-    const dataMin = [];
-    const dataMax = [];
-    const labels = [];
+    const dataTemp = []; const dataMin = []; const dataMax = []; const labels = [];
     const agora = new Date();
-
     for (let i = 24; i >= 0; i--) {
         const dataPonto = new Date(agora.getTime() - i * 60 * 60 * 1000);
         const hora = dataPonto.getHours();
-        
-        // Simulação de perda de rendimento noturno das 22h às 06h (temperatura sobe artificialmente)
         let perdaNoturna = (hora >= 22 || hora <= 6) ? 2.2 : 0;
         let ruido = (Math.random() * 1.6) - 0.8;
         let tempCalculada = baseTemp + perdaNoturna + ruido;
 
-        // Restringe aos limites operacionais de teste
         if(tempCalculada < 1) tempCalculada = 1.2;
         if(tempCalculada > 20) tempCalculada = 19.8;
 
@@ -108,41 +130,34 @@ function gerarHistorico24h(baseTemp) {
     return { labels, dataTemp, dataMin, dataMax };
 }
 
-// 1. Montagem do Layout HTML
+// Injeção dos Cards das Câmaras
 let htmlCards = '';
 configs.forEach(c => {
     htmlCards += `
         <div class="ccard">
             <div style="display:flex; justify-content:space-between"><b>${c.nome}</b></div>
             <div style="font-size:2rem; font-weight:bold" id="t${c.id}">--°C</div>
-            
             <div class="chart-container"><canvas id="chart${c.id}"></canvas></div>
-            
             <div class="limites-info">
                 <span class="lim-baixo">▼ Min: 5.0°C</span>
                 <span class="lim-alto">▲ Max: 15.0°C</span>
             </div>
-            
             <div class="alarmes-box">
                 <div style="color:#8b949e; margin-bottom:5px; font-weight:bold;">Últimos Eventos:</div>
                 <div id="ev${c.id}">Carregando histórico...</div>
             </div>
-
-            <div id="status${c.id}" class="status-container status-normal">
-                🟢 CONDIÇÃO NORMAL
-            </div>
+            <div id="status${c.id}" class="status-container status-normal">🟢 CONDIÇÃO NORMAL</div>
         </div>
     `;
     estadosCamaras[c.id] = 'NORMAL'; 
 });
 document.getElementById('grid-principal').innerHTML = htmlCards;
 
-// 2. Inicialização dos Gráficos com Histórico Expandido
+// Inicializa Gráficos das Câmaras
 configs.forEach(c => {
     const ctx = document.getElementById('chart'+c.id).getContext('2d');
     const historico = gerarHistorico24h(c.baseTemp);
     
-    // Define a temperatura de partida em tempo real baseada no último ponto do histórico
     temperaturasAtuais[c.id] = historico.dataTemp[historico.dataTemp.length - 1];
     document.getElementById('t'+c.id).textContent = temperaturasAtuais[c.id].toFixed(1) + '°C';
 
@@ -160,12 +175,9 @@ configs.forEach(c => {
             responsive: true, 
             maintainAspectRatio: false, 
             plugins: {legend: {display:false}},
-            scales: {
-                y: { suggestedMin: 0, suggestedMax: 22 }
-            }
+            scales: { y: { suggestedMin: 0, suggestedMax: 22 } }
         }
     });
-    
     document.getElementById('ev'+c.id).innerHTML = "Sistema online. Histórico de 24h carregado.";
 });
 
@@ -173,15 +185,13 @@ function registrarEvento(id, msg, tipo) {
     const el = document.getElementById('ev' + id);
     let logs = el.innerHTML.includes('Sistema online') ? [] : el.innerHTML.split('<br>');
     const time = new Date().toLocaleTimeString();
-    
     const classeTipo = tipo === 'ALERTA' ? 'evento-alerta' : 'evento-normal';
     logs.unshift(`<span class="${classeTipo}">[${time}] ${msg}</span>`);
-    
     if(logs.length > 5) logs.pop();
     el.innerHTML = logs.join('<br>');
 }
 
-// 3. Processamento de Atualização em Tempo Real com Histerese de 0.5°C
+// Lógica de Atualização em Tempo Real (Câmaras)
 function atualizar() {
     const agora = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
 
@@ -189,7 +199,6 @@ function atualizar() {
         let variacao = (Math.random() * 1.2) - 0.6; 
         temperaturasAtuais[c.id] += variacao;
 
-        // Travas de segurança da simulação
         if(temperaturasAtuais[c.id] < 1) temperaturasAtuais[c.id] = 1.5;
         if(temperaturasAtuais[c.id] > 20) temperaturasAtuais[c.id] = 19.5;
 
@@ -199,22 +208,19 @@ function atualizar() {
         
         document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
-        // Atualiza Gráfico de Linhas
         chart.data.labels.push(agora);
         chart.data.datasets[0].data.push(Number(tempAtual.toFixed(1))); 
         chart.data.datasets[1].data.push(5);         
         chart.data.datasets[2].data.push(15);        
         
-        // Mantém a proporção do histórico deslocando os pontos antigos
-        if(chart.data.labels.length > 30) {
+        if(chart.data.labels.length > 25) {
             chart.data.labels.shift();
             chart.data.datasets.forEach(d => d.data.shift());
         }
         chart.update();
 
-        // LÓGICA AVANÇADA DE HISTERESE (DEADBAND = 0.5°C)
+        // Histerese de 0.5°C
         let estadoAnterior = estadosCamaras[c.id];
-
         if (estadoAnterior === 'NORMAL') {
             if (tempAtual > 15.0) {
                 estadosCamaras[c.id] = 'ALTA';
@@ -224,23 +230,15 @@ function atualizar() {
                 registrarEvento(c.id, `ALERTA: Temperatura Baixa (${tempAtual.toFixed(1)}°C)`, 'ALERTA');
             }
         } 
-        else if (estadoAnterior === 'ALTA') {
-            // Só retorna ao Normal se baixar de 14.5°C (Histerese de 0.5°C)
-            if (tempAtual <= 14.5) {
-                estadosCamaras[c.id] = 'NORMAL';
-                registrarEvento(c.id, `INFO: Temperatura Normalizada (${tempAtual.toFixed(1)}°C)`, 'NORMAL');
-            }
+        else if (estadoAnterior === 'ALTA' && tempAtual <= 14.5) {
+            estadosCamaras[c.id] = 'NORMAL';
+            registrarEvento(c.id, `INFO: Temperatura Normalizada (${tempAtual.toFixed(1)}°C)`, 'NORMAL');
         } 
-        else if (estadoAnterior === 'BAIXA') {
-            // Só retorna ao Normal se subir acima de 5.5°C (Histerese de 0.5°C)
-            if (tempAtual >= 5.5) {
-                estadosCamaras[c.id] = 'NORMAL';
-                estadosCamaras[c.id] = 'NORMAL';
-                registrarEvento(c.id, `INFO: Temperatura Normalizada (${tempAtual.toFixed(1)}°C)`, 'NORMAL');
-            }
+        else if (estadoAnterior === 'BAIXA' && tempAtual >= 5.5) {
+            estadosCamaras[c.id] = 'NORMAL';
+            registrarEvento(c.id, `INFO: Temperatura Normalizada (${tempAtual.toFixed(1)}°C)`, 'NORMAL');
         }
 
-        // Atualização da UI com base no estado consolidado pela Histerese
         if (estadosCamaras[c.id] === 'ALTA') {
             statusBox.className = "status-container status-alto";
             statusBox.innerHTML = "🔴 ALERTA: TEMPERATURA ALTA 🔥";
@@ -254,9 +252,82 @@ function atualizar() {
     });
 }
 
-// Execução cíclica
+// NOVA FUNÇÃO: Consome dados reais de Cuiabá da API Open-Meteo
+async function consumirDadosClimaCuiaba() {
+    // Coordenadas geográficas exatas de Cuiabá - MT
+    const lat = -15.5961;
+    const lon = -56.0967;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&timezone=America%2FCuiaba&past_days=1`;
+
+    try {
+        const resposta = await fetch(url);
+        const dados = await resposta.json();
+
+        // 1. Atualiza o display da temperatura instantânea atual
+        const tempAtualExterna = dados.current.temperature_2m;
+        document.getElementById('temp-externa-txt').textContent = tempAtualExterna.toFixed(1) + '°C';
+
+        // 2. Extrai dados horários estruturados das últimas 24 horas
+        const tempos = dados.hourly.time;
+        const temps = dados.hourly.temperature_2m;
+
+        // Filtra para exibir apenas os últimos 24 pontos na tela
+        const ultimosTempos = tempos.slice(-24).map(t => {
+            const dataHora = new Date(t);
+            return `${dataHora.getHours().toString().padStart(2, '0')}:00`;
+        });
+        const ultimasTemps = temps.slice(-24);
+
+        // 3. Renderiza ou atualiza o gráfico do ambiente externo
+        const ctxAmbiente = document.getElementById('chartAmbiente').getContext('2d');
+        
+        if (chartAmbiente) {
+            chartAmbiente.data.labels = ultimosTempos;
+            chartAmbiente.data.datasets[0].data = ultimasTemps;
+            chartAmbiente.update();
+        } else {
+            chartAmbiente = new Chart(ctxAmbiente, {
+                type: 'line',
+                data: {
+                    labels: ultimosTempos,
+                    datasets: [{
+                        label: 'Temp. Ambiente Externa (°C)',
+                        data: ultimasTemps,
+                        borderColor: '#ff9f43',
+                        backgroundColor: 'rgba(255, 159, 67, 0.05)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2.5,
+                        pointRadius: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            title: { display: true, text: 'Graus Celsius (°C)', color: '#8b949e' },
+                            suggestMin: 15,
+                            suggestMax: 42
+                        }
+                    }
+                }
+            });
+        }
+    } catch (erro) {
+        console.error("Falha ao sincronizar dados meteorológicos de Cuiabá:", erro);
+        document.getElementById('temp-externa-txt').textContent = "Erro API";
+    }
+}
+
+// Ciclos de execução do painel
 setInterval(atualizar, 4000); 
+setInterval(consumirDadosClimaCuiaba, 600000); // Atualiza os dados da internet a cada 10 minutos
+
+// Partida inicial do sistema
 atualizar();
+consumirDadosClimaCuiaba();
 </script>
 </body>
 </html>
