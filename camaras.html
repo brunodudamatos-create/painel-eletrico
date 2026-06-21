@@ -29,7 +29,7 @@
     .ccard {background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:15px; display:flex; flex-direction:column;}
     
     .chart-container {flex-grow: 1; height: 160px; margin: 10px 0;}
-    .chart-container-ambiente {height: 220px; margin-top: 15px;}
+    .chart-container-ambiente {height: 240px; margin-top: 15px;}
     
     .limites-info {display:flex; justify-content:space-between; font-size:0.75rem; margin-top:5px; padding:5px 10px; background:#161b22; border-radius:5px;}
     .lim-baixo {color:#58a6ff; font-weight:bold;} 
@@ -50,15 +50,21 @@
     .status-alto { background-color: rgba(248, 81, 73, 0.2); border: 1px solid #f85149; color: #ff7b72; }
     .status-baixo { background-color: rgba(88, 166, 255, 0.2); border: 1px solid #58a6ff; color: #79c0ff; }
 
+    /* Layout do Painel do Clima com a Métrica centralizada */
     .painel-ambiente {
         display: flex;
-        gap: 20px;
+        justify-content: space-between;
         align-items: center;
         background: #0d1117;
         border: 1px solid #30363d;
-        padding: 15px;
+        padding: 20px;
         border-radius: 10px;
+        text-align: center;
     }
+    .col-info { flex: 1; font-size: 0.85rem; color: #8b949e; }
+    .col-info.esquerda { text-align: left; border-right: 1px solid #21262d; padding-right: 15px; }
+    .col-info.direita { text-align: right; border-left: 1px solid #21262d; padding-left: 15px; }
+    .col-centro { min-width: 250px; padding: 0 20px; }
 </style>
 </head>
 <body>
@@ -72,23 +78,31 @@
 
 <main>
     <div class="secao">
-        <h2 class="secao-titulo">Visão Geral das Câmaras (Histórico 24h)</h2>
+        <h2 class="secao-titulo">Visão Geral das Câmaras</h2>
         <div class="camaras-grid" id="grid-principal">
             </div>
     </div>
 
     <div class="secao">
-        <h2 class="secao-titulo">Condição Térmica Externa (Cuiabá - MT)</h2>
+        <h2 class="secao-titulo">Perfil Térmico Externo (Cuiabá - Subestação/Planta)</h2>
         <div class="painel-ambiente">
-            <div style="text-align: center; min-width: 180px; padding-right: 20px; border-right: 1px solid #30363d;">
-                <div style="color: #8b949e; font-size: 0.85rem; font-weight: bold; margin-bottom: 5px;">AMBIENTE AGORA</div>
-                <div id="temp-externa-txt" style="font-size: 3rem; font-weight: bold; color: #ff9f43;">--°C</div>
-                <div style="color: #8b949e; font-size: 0.7rem; margin-top: 5px;">Sincronizado via Open-Meteo</div>
+            <div class="col-info esquerda">
+                <span style="color: #ff9f43; font-weight: bold; font-size: 0.95rem;">🟠 Histórico Real (-24h)</span>
+                <p style="margin-top: 5px; line-height: 1.4;">Comportamento térmico registrado nas últimas 24 horas de operação.</p>
             </div>
-            <div style="color: #8b949e; font-size: 0.85rem; line-height: 1.5;">
-                <strong>Análise de Impacto Térmico:</strong> Use o gráfico abaixo para correlacionar picos de temperatura externa em Cuiabá com o aumento de eventos de alarme ou perda de eficiência nos compressores industriais durante horários críticos.
+            
+            <div class="col-centro">
+                <div style="color: #8b949e; font-size: 0.8rem; font-weight: bold; letter-spacing: 1px; margin-bottom: 3px;">AMBIENTE AGORA</div>
+                <div id="temp-externa-txt" style="font-size: 3.8rem; font-weight: bold; color: #ff9f43; line-height: 1;">--°C</div>
+                <div style="color: #8b949e; font-size: 0.7rem; margin-top: 8px; font-family: monospace;">Coord: -15.6626, -55.9732</div>
+            </div>
+            
+            <div class="col-info direita">
+                <span style="color: #00a8ff; font-weight: bold; font-size: 0.95rem;">🔵 Previsão Preditiva (+24h)</span>
+                <p style="margin-top: 5px; line-height: 1.4;">Tendência meteorológica calculada para as próximas 24 horas para manobras preventivas.</p>
             </div>
         </div>
+        
         <div class="chart-container-ambiente">
             <canvas id="chartAmbiente"></canvas>
         </div>
@@ -108,7 +122,6 @@ let chartAmbiente = null;
 const temperaturasAtuais = {};
 const estadosCamaras = {}; 
 
-// Gerador de histórico das câmaras
 function gerarHistorico24h(baseTemp) {
     const dataTemp = []; const dataMin = []; const dataMax = []; const labels = [];
     const agora = new Date();
@@ -130,7 +143,6 @@ function gerarHistorico24h(baseTemp) {
     return { labels, dataTemp, dataMin, dataMax };
 }
 
-// Injeção dos Cards das Câmaras
 let htmlCards = '';
 configs.forEach(c => {
     htmlCards += `
@@ -144,7 +156,7 @@ configs.forEach(c => {
             </div>
             <div class="alarmes-box">
                 <div style="color:#8b949e; margin-bottom:5px; font-weight:bold;">Últimos Eventos:</div>
-                <div id="ev${c.id}">Carregando histórico...</div>
+                <div id="ev${c.id}">Carregando...</div>
             </div>
             <div id="status${c.id}" class="status-container status-normal">🟢 CONDIÇÃO NORMAL</div>
         </div>
@@ -153,7 +165,6 @@ configs.forEach(c => {
 });
 document.getElementById('grid-principal').innerHTML = htmlCards;
 
-// Inicializa Gráficos das Câmaras
 configs.forEach(c => {
     const ctx = document.getElementById('chart'+c.id).getContext('2d');
     const historico = gerarHistorico24h(c.baseTemp);
@@ -178,12 +189,12 @@ configs.forEach(c => {
             scales: { y: { suggestedMin: 0, suggestedMax: 22 } }
         }
     });
-    document.getElementById('ev'+c.id).innerHTML = "Sistema online. Histórico de 24h carregado.";
+    document.getElementById('ev'+c.id).innerHTML = "Sistema operacional. Monitoramento ativo.";
 });
 
 function registrarEvento(id, msg, tipo) {
     const el = document.getElementById('ev' + id);
-    let logs = el.innerHTML.includes('Sistema online') ? [] : el.innerHTML.split('<br>');
+    let logs = el.innerHTML.includes('Sistema operacional') ? [] : el.innerHTML.split('<br>');
     const time = new Date().toLocaleTimeString();
     const classeTipo = tipo === 'ALERTA' ? 'evento-alerta' : 'evento-normal';
     logs.unshift(`<span class="${classeTipo}">[${time}] ${msg}</span>`);
@@ -191,7 +202,6 @@ function registrarEvento(id, msg, tipo) {
     el.innerHTML = logs.join('<br>');
 }
 
-// Lógica de Atualização em Tempo Real (Câmaras)
 function atualizar() {
     const agora = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
 
@@ -219,7 +229,7 @@ function atualizar() {
         }
         chart.update();
 
-        // Histerese de 0.5°C
+        // Histerese Industrial de 0.5°C
         let estadoAnterior = estadosCamaras[c.id];
         if (estadoAnterior === 'NORMAL') {
             if (tempAtual > 15.0) {
@@ -252,63 +262,122 @@ function atualizar() {
     });
 }
 
-// NOVA FUNÇÃO: Consome dados reais de Cuiabá da API Open-Meteo
+// LÓGICA DE INTEGRAÇÃO AVANÇADA OPEN-METEO (PASSADO + FUTURO UNIFICADOS)
 async function consumirDadosClimaCuiaba() {
-    // Coordenadas geográficas exatas de Cuiabá - MT
-    const lat = -15.5961;
-    const lon = -56.0967;
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&timezone=America%2FCuiaba&past_days=1`;
+    // Novas coordenadas exatas solicitadas
+    const lat = -15.662618;
+    const lon = -55.973215;
+    
+    // Configura a requisição para puxar 1 dia retroativo e 2 dias para frente (garantindo as janelas completas)
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&timezone=America%2FCuiaba&past_days=1&forecast_days=2`;
 
     try {
         const resposta = await fetch(url);
         const dados = await resposta.json();
 
-        // 1. Atualiza o display da temperatura instantânea atual
+        // 1. Atualiza o display central da temperatura atual
         const tempAtualExterna = dados.current.temperature_2m;
         document.getElementById('temp-externa-txt').textContent = tempAtualExterna.toFixed(1) + '°C';
 
-        // 2. Extrai dados horários estruturados das últimas 24 horas
-        const tempos = dados.hourly.time;
-        const temps = dados.hourly.temperature_2m;
+        const hourlyTimes = dados.hourly.time;
+        const hourlyTemps = dados.hourly.temperature_2m;
+        const currentISO = dados.current.time;
 
-        // Filtra para exibir apenas os últimos 24 pontos na tela
-        const ultimosTempos = tempos.slice(-24).map(t => {
-            const dataHora = new Date(t);
-            return `${dataHora.getHours().toString().padStart(2, '0')}:00`;
-        });
-        const ultimasTemps = temps.slice(-24);
+        // Localiza o índice exato do array correspondente ao momento atual
+        let currentIndex = hourlyTimes.findIndex(t => t === currentISO);
+        if (currentIndex === -1) {
+            // Fallback robusto de segurança temporal
+            const agoraISO = new Date().toISOString().substring(0, 14) + "00";
+            currentIndex = hourlyTimes.findIndex(t => t.startsWith(agoraISO)) || 24;
+        }
 
-        // 3. Renderiza ou atualiza o gráfico do ambiente externo
+        // Delimita as janelas de 24 pontos para trás e 24 pontos para frente
+        const startIndex = currentIndex - 24;
+        const endIndex = currentIndex + 24;
+
+        const labels dasHoras = [];
+        const dadosPassado = [];
+        const dadosPrevisao = [];
+
+        // Monta a linha do tempo contínua separando os datasets
+        for (let i = startIndex; i <= endIndex; i++) {
+            if (i < 0 || i >= hourlyTimes.length) continue;
+
+            const dataPonto = new Date(hourlyTimes[i]);
+            const horaFormatada = `${dataPonto.getHours().toString().padStart(2, '0')}:00`;
+            
+            labels dasHoras.push(horaFormatada);
+
+            if (i < currentIndex) {
+                // Histórico puro
+                dadosPassado.push(hourlyTemps[i]);
+                dadosPrevisao.push(null);
+            } else if (i === currentIndex) {
+                // Ponto de intersecção/encontro (conecta as duas linhas perfeitamente)
+                dadosPassado.push(hourlyTemps[i]);
+                dadosPrevisao.push(hourlyTemps[i]);
+            } else {
+                // Previsão futura pura
+                dadosPassado.push(null);
+                dadosPrevisao.push(hourlyTemps[i]);
+            }
+        }
+
+        // 2. Renderização ou Atualização do Gráfico Unificado
         const ctxAmbiente = document.getElementById('chartAmbiente').getContext('2d');
         
         if (chartAmbiente) {
-            chartAmbiente.data.labels = ultimosTempos;
-            chartAmbiente.data.datasets[0].data = ultimasTemps;
+            chartAmbiente.data.labels = labels dasHoras;
+            chartAmbiente.data.datasets[0].data = dadosPassado;
+            chartAmbiente.data.datasets[1].data = dadosPrevisao;
             chartAmbiente.update();
         } else {
             chartAmbiente = new Chart(ctxAmbiente, {
                 type: 'line',
                 data: {
-                    labels: ultimosTempos,
-                    datasets: [{
-                        label: 'Temp. Ambiente Externa (°C)',
-                        data: ultimasTemps,
-                        borderColor: '#ff9f43',
-                        backgroundColor: 'rgba(255, 159, 67, 0.05)',
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 2.5,
-                        pointRadius: 2
-                    }]
+                    labels: labels dasHoras,
+                    datasets: [
+                        {
+                            label: 'Histórico Real (-24h)',
+                            data: dadosPassado,
+                            borderColor: '#ff9f43',
+                            backgroundColor: 'rgba(255, 159, 67, 0.03)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2.5,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Previsão Preditiva (+24h)',
+                            data: dadosPrevisao,
+                            borderColor: '#00a8ff',
+                            backgroundColor: 'rgba(0, 168, 255, 0.03)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2.5,
+                            pointRadius: 0
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    plugins: { 
+                        legend: { 
+                            display: true,
+                            labels: { color: '#8b949e', font: { size: 11 } }
+                        }
+                    },
                     scales: {
+                        x: {
+                            grid: { color: '#21262d' },
+                            ticks: { color: '#8b949e', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }
+                        },
                         y: {
-                            title: { display: true, text: 'Graus Celsius (°C)', color: '#8b949e' },
-                            suggestMin: 15,
+                            grid: { color: '#21262d' },
+                            title: { display: true, text: 'Temperatura (°C)', color: '#8b949e' },
+                            ticks: { color: '#8b949e' },
+                            suggestMin: 18,
                             suggestMax: 42
                         }
                     }
@@ -316,16 +385,16 @@ async function consumirDadosClimaCuiaba() {
             });
         }
     } catch (erro) {
-        console.error("Falha ao sincronizar dados meteorológicos de Cuiabá:", erro);
-        document.getElementById('temp-externa-txt').textContent = "Erro API";
+        console.error("Falha crítica ao sincronizar telemetria climática:", erro);
+        document.getElementById('temp-externa-txt').textContent = "API Offline";
     }
 }
 
-// Ciclos de execução do painel
+// Loops de varredura ativa
 setInterval(atualizar, 4000); 
-setInterval(consumirDadosClimaCuiaba, 600000); // Atualiza os dados da internet a cada 10 minutos
+setInterval(consumirDadosClimaCuiaba, 600000); // Atualiza os dados meteorológicos a cada 10 minutos
 
-// Partida inicial do sistema
+// Inicialização imediata
 atualizar();
 consumirDadosClimaCuiaba();
 </script>
