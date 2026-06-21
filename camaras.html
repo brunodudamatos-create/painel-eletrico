@@ -10,7 +10,6 @@
     body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
     
     header{background:#161b22;padding:15px 30px;border-bottom:1px solid #30363d;}
-    
     main{padding:20px;max-width:1600px;margin:0 auto}
     
     .secao {
@@ -34,10 +33,10 @@
     .lim-baixo {color:#58a6ff; font-weight:bold;} 
     .lim-alto {color:#d29922; font-weight:bold;}  
     
-    .alarmes-box {font-size:0.75rem; background:#161b22; padding:10px; border-radius:5px; margin-top:10px;}
-    .evento-alerta {color:#f85149; margin-bottom:2px;} 
+    .alarmes-box {font-size:0.75rem; background:#161b22; padding:10px; border-radius:5px; margin-top:10px; height: 110px; overflow-y: auto;}
+    .evento-alerta {color:#f85149; margin-bottom:2px; display:block;}
+    .evento-normal {color:#3fb950; margin-bottom:2px; display:block;}
 
-    /* Estilos para o novo indicador de status */
     .status-container {
         margin-top: 15px;
         padding: 10px;
@@ -46,7 +45,6 @@
         font-weight: bold;
         transition: background-color 0.3s ease;
     }
-    /* Classes dinâmicas que serão aplicadas pelo JavaScript */
     .status-normal { background-color: rgba(46, 160, 67, 0.2); border: 1px solid #2ea043; color: #3fb950; }
     .status-alto { background-color: rgba(248, 81, 73, 0.2); border: 1px solid #f85149; color: #ff7b72; }
     .status-baixo { background-color: rgba(88, 166, 255, 0.2); border: 1px solid #58a6ff; color: #79c0ff; }
@@ -63,7 +61,7 @@
 
 <main>
     <div class="secao">
-        <h2 class="secao-titulo">Visão Geral das Câmaras</h2>
+        <h2 class="secao-titulo">Visão Geral das Câmaras (Histórico 24h)</h2>
         <div class="camaras-grid" id="grid-principal">
             </div>
     </div>
@@ -71,22 +69,46 @@
 
 <script>
 const configs = [
-    {id: '1', nome: 'Câmara Barracão 01'},
-    {id: '2', nome: 'Câmara Barracão 02'},
-    {id: '3', nome: 'Câmara Barracão 03'},
-    {id: '4', nome: 'Câmara Ponto de Venda'}
+    {id: '1', nome: 'Câmara Barracão 01', baseTemp: 4.5},
+    {id: '2', nome: 'Câmara Barracão 02', baseTemp: 10.0},
+    {id: '3', nome: 'Câmara Barracão 03', baseTemp: 13.5},
+    {id: '4', nome: 'Câmara Ponto de Venda', baseTemp: 7.5}
 ];
 
 const charts = {};
+const temperaturasAtuais = {};
+const estadosCamaras = {}; // Armazena o estado atual: 'NORMAL', 'ALTA' ou 'BAIXA'
 
-const temperaturasAtuais = {
-    '1': 4.5,
-    '2': 10.0,
-    '3': 18.5,
-    '4': 8.0
-};
+// Função para gerar o histórico das últimas 24 horas com simulação de perda de rendimento noturno
+function gerarHistorico24h(baseTemp) {
+    const dataTemp = [];
+    const dataMin = [];
+    const dataMax = [];
+    const labels = [];
+    const agora = new Date();
 
-// 1. Construir HTML (Agora com a div de status)
+    for (let i = 24; i >= 0; i--) {
+        const dataPonto = new Date(agora.getTime() - i * 60 * 60 * 1000);
+        const hora = dataPonto.getHours();
+        
+        // Simulação de perda de rendimento noturno das 22h às 06h (temperatura sobe artificialmente)
+        let perdaNoturna = (hora >= 22 || hora <= 6) ? 2.2 : 0;
+        let ruido = (Math.random() * 1.6) - 0.8;
+        let tempCalculada = baseTemp + perdaNoturna + ruido;
+
+        // Restringe aos limites operacionais de teste
+        if(tempCalculada < 1) tempCalculada = 1.2;
+        if(tempCalculada > 20) tempCalculada = 19.8;
+
+        labels.push(`${hora.toString().padStart(2, '0')}:00`);
+        dataTemp.push(Number(tempCalculada.toFixed(1)));
+        dataMin.push(5);
+        dataMax.push(15);
+    }
+    return { labels, dataTemp, dataMin, dataMax };
+}
+
+// 1. Montagem do Layout HTML
 let htmlCards = '';
 configs.forEach(c => {
     htmlCards += `
@@ -97,36 +119,41 @@ configs.forEach(c => {
             <div class="chart-container"><canvas id="chart${c.id}"></canvas></div>
             
             <div class="limites-info">
-                <span class="lim-baixo">▼ Min: 5°C</span>
-                <span class="lim-alto">▲ Max: 15°C</span>
+                <span class="lim-baixo">▼ Min: 5.0°C</span>
+                <span class="lim-alto">▲ Max: 15.0°C</span>
             </div>
             
             <div class="alarmes-box">
                 <div style="color:#8b949e; margin-bottom:5px; font-weight:bold;">Últimos Eventos:</div>
-                <div id="ev${c.id}">Aguardando dados...</div>
+                <div id="ev${c.id}">Carregando histórico...</div>
             </div>
 
             <div id="status${c.id}" class="status-container status-normal">
-                Verificando Condição...
+                🟢 CONDIÇÃO NORMAL
             </div>
         </div>
     `;
+    estadosCamaras[c.id] = 'NORMAL'; 
 });
-
 document.getElementById('grid-principal').innerHTML = htmlCards;
 
-// 2. Inicializar Gráficos
+// 2. Inicialização dos Gráficos com Histórico Expandido
 configs.forEach(c => {
     const ctx = document.getElementById('chart'+c.id).getContext('2d');
+    const historico = gerarHistorico24h(c.baseTemp);
     
+    // Define a temperatura de partida em tempo real baseada no último ponto do histórico
+    temperaturasAtuais[c.id] = historico.dataTemp[historico.dataTemp.length - 1];
+    document.getElementById('t'+c.id).textContent = temperaturasAtuais[c.id].toFixed(1) + '°C';
+
     charts[c.id] = new Chart(ctx, {
         type: 'line',
         data: { 
-            labels: [], 
+            labels: historico.labels, 
             datasets: [
-                {label: 'Temp', data: [], borderColor: '#58a6ff', fill: false, tension: 0.3, borderWidth: 2},
-                {label: 'Min', data: [], borderColor: '#00008b', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5},
-                {label: 'Max', data: [], borderColor: '#d29922', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5}
+                {label: 'Temp', data: historico.dataTemp, borderColor: '#58a6ff', fill: false, tension: 0.2, borderWidth: 2},
+                {label: 'Min', data: historico.dataMin, borderColor: '#00008b', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5},
+                {label: 'Max', data: historico.dataMax, borderColor: '#d29922', borderDash: [5,5], pointRadius: 0, borderWidth: 1.5}
             ]
         },
         options: { 
@@ -138,68 +165,96 @@ configs.forEach(c => {
             }
         }
     });
+    
+    document.getElementById('ev'+c.id).innerHTML = "Sistema online. Histórico de 24h carregado.";
 });
 
-// 3. Função de Eventos
-function registrarEvento(id, msg) {
+function registrarEvento(id, msg, tipo) {
     const el = document.getElementById('ev' + id);
-    let logs = el.innerHTML.includes('Aguardando') ? [] : el.innerHTML.split('<br>');
-    
+    let logs = el.innerHTML.includes('Sistema online') ? [] : el.innerHTML.split('<br>');
     const time = new Date().toLocaleTimeString();
-    logs.unshift(`<span class="evento-alerta">[${time}] ${msg}</span>`);
+    
+    const classeTipo = tipo === 'ALERTA' ? 'evento-alerta' : 'evento-normal';
+    logs.unshift(`<span class="${classeTipo}">[${time}] ${msg}</span>`);
     
     if(logs.length > 5) logs.pop();
     el.innerHTML = logs.join('<br>');
 }
 
-// 4. Função de Atualização (com lógica de Status Visual)
+// 3. Processamento de Atualização em Tempo Real com Histerese de 0.5°C
 function atualizar() {
-    const agora = new Date().toLocaleTimeString();
+    const agora = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
 
     configs.forEach(c => {
-        let variacao = (Math.random() * 2) - 1; 
+        let variacao = (Math.random() * 1.2) - 0.6; 
         temperaturasAtuais[c.id] += variacao;
 
+        // Travas de segurança da simulação
         if(temperaturasAtuais[c.id] < 1) temperaturasAtuais[c.id] = 1.5;
         if(temperaturasAtuais[c.id] > 20) temperaturasAtuais[c.id] = 19.5;
 
         const tempAtual = temperaturasAtuais[c.id];
         const chart = charts[c.id];
+        const statusBox = document.getElementById('status'+c.id);
         
         document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
+        // Atualiza Gráfico de Linhas
         chart.data.labels.push(agora);
-        chart.data.datasets[0].data.push(tempAtual); 
+        chart.data.datasets[0].data.push(Number(tempAtual.toFixed(1))); 
         chart.data.datasets[1].data.push(5);         
         chart.data.datasets[2].data.push(15);        
         
-        if(chart.data.labels.length > 20) {
+        // Mantém a proporção do histórico deslocando os pontos antigos
+        if(chart.data.labels.length > 30) {
             chart.data.labels.shift();
             chart.data.datasets.forEach(d => d.data.shift());
         }
         chart.update();
 
-        // LÓGICA DO NOVO INDICADOR DE STATUS
-        const statusBox = document.getElementById('status'+c.id);
+        // LÓGICA AVANÇADA DE HISTERESE (DEADBAND = 0.5°C)
+        let estadoAnterior = estadosCamaras[c.id];
 
-        if(tempAtual < 5) {
-            registrarEvento(c.id, "ALERTA: Baixa Temperatura!");
-            // Muda para azul
-            statusBox.className = "status-container status-baixo";
-            statusBox.innerHTML = "❄️ ALERTA: TEMPERATURA BAIXA 🧊";
-        } else if(tempAtual > 15) {
-            registrarEvento(c.id, "ALERTA: Alta Temperatura!");
-            // Muda para vermelho
+        if (estadoAnterior === 'NORMAL') {
+            if (tempAtual > 15.0) {
+                estadosCamaras[c.id] = 'ALTA';
+                registrarEvento(c.id, `ALERTA: Temperatura Alta (${tempAtual.toFixed(1)}°C)`, 'ALERTA');
+            } else if (tempAtual < 5.0) {
+                estadosCamaras[c.id] = 'BAIXA';
+                registrarEvento(c.id, `ALERTA: Temperatura Baixa (${tempAtual.toFixed(1)}°C)`, 'ALERTA');
+            }
+        } 
+        else if (estadoAnterior === 'ALTA') {
+            // Só retorna ao Normal se baixar de 14.5°C (Histerese de 0.5°C)
+            if (tempAtual <= 14.5) {
+                estadosCamaras[c.id] = 'NORMAL';
+                registrarEvento(c.id, `INFO: Temperatura Normalizada (${tempAtual.toFixed(1)}°C)`, 'NORMAL');
+            }
+        } 
+        else if (estadoAnterior === 'BAIXA') {
+            // Só retorna ao Normal se subir acima de 5.5°C (Histerese de 0.5°C)
+            if (tempAtual >= 5.5) {
+                estadosCamaras[c.id] = 'NORMAL';
+                estadosCamaras[c.id] = 'NORMAL';
+                registrarEvento(c.id, `INFO: Temperatura Normalizada (${tempAtual.toFixed(1)}°C)`, 'NORMAL');
+            }
+        }
+
+        // Atualização da UI com base no estado consolidado pela Histerese
+        if (estadosCamaras[c.id] === 'ALTA') {
             statusBox.className = "status-container status-alto";
             statusBox.innerHTML = "🔴 ALERTA: TEMPERATURA ALTA 🔥";
+        } else if (estadosCamaras[c.id] === 'BAIXA') {
+            statusBox.className = "status-container status-baixo";
+            statusBox.innerHTML = "❄️ ALERTA: TEMPERATURA BAIXA 🧊";
         } else {
-            // Volta para verde (Normal)
             statusBox.className = "status-container status-normal";
             statusBox.innerHTML = "🟢 CONDIÇÃO NORMAL";
         }
     });
 }
 
+// Execução cíclica
 setInterval(atualizar, 4000); 
 atualizar();
 </script>
