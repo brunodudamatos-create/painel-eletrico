@@ -84,7 +84,7 @@
     </div>
 
     <div class="secao">
-        <h2 class="secao-titulo">Perfil Térmico Externo (Cuiabá - Subestação/Planta)</h2>
+        <h2 class="secao-titulo">Perfil Térmico Externo (Cuiabá - Planta/Operação)</h2>
         <div class="painel-ambiente">
             <div class="col-info esquerda">
                 <span style="color: #ff9f43; font-weight: bold; font-size: 0.95rem;">🟠 Histórico Real (-24h)</span>
@@ -262,13 +262,12 @@ function atualizar() {
     });
 }
 
-// LÓGICA DE INTEGRAÇÃO AVANÇADA OPEN-METEO (PASSADO + FUTURO UNIFICADOS)
+// LÓGICA DE INTEGRAÇÃO AVANÇADA (Ajuste definitivo do nome das variáveis)
 async function consumirDadosClimaCuiaba() {
-    // Novas coordenadas exatas solicitadas
+    // Coordenadas especificadas pelo usuário
     const lat = -15.662618;
     const lon = -55.973215;
     
-    // Configura a requisição para puxar 1 dia retroativo e 2 dias para frente (garantindo as janelas completas)
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&timezone=America%2FCuiaba&past_days=1&forecast_days=2`;
 
     try {
@@ -283,51 +282,44 @@ async function consumirDadosClimaCuiaba() {
         const hourlyTemps = dados.hourly.temperature_2m;
         const currentISO = dados.current.time;
 
-        // Localiza o índice exato do array correspondente ao momento atual
         let currentIndex = hourlyTimes.findIndex(t => t === currentISO);
         if (currentIndex === -1) {
-            // Fallback robusto de segurança temporal
             const agoraISO = new Date().toISOString().substring(0, 14) + "00";
             currentIndex = hourlyTimes.findIndex(t => t.startsWith(agoraISO)) || 24;
         }
 
-        // Delimita as janelas de 24 pontos para trás e 24 pontos para frente
         const startIndex = currentIndex - 24;
         const endIndex = currentIndex + 24;
 
-        const labels dasHoras = [];
+        const labelsHoras = [];
         const dadosPassado = [];
         const dadosPrevisao = [];
 
-        // Monta a linha do tempo contínua separando os datasets
         for (let i = startIndex; i <= endIndex; i++) {
             if (i < 0 || i >= hourlyTimes.length) continue;
 
             const dataPonto = new Date(hourlyTimes[i]);
             const horaFormatada = `${dataPonto.getHours().toString().padStart(2, '0')}:00`;
             
-            labels dasHoras.push(horaFormatada);
+            labelsHoras.push(horaFormatada);
 
             if (i < currentIndex) {
-                // Histórico puro
                 dadosPassado.push(hourlyTemps[i]);
                 dadosPrevisao.push(null);
             } else if (i === currentIndex) {
-                // Ponto de intersecção/encontro (conecta as duas linhas perfeitamente)
                 dadosPassado.push(hourlyTemps[i]);
                 dadosPrevisao.push(hourlyTemps[i]);
             } else {
-                // Previsão futura pura
                 dadosPassado.push(null);
                 dadosPrevisao.push(hourlyTemps[i]);
             }
         }
 
-        // 2. Renderização ou Atualização do Gráfico Unificado
+        // 2. Renderização do Gráfico Unificado Corrigido
         const ctxAmbiente = document.getElementById('chartAmbiente').getContext('2d');
         
         if (chartAmbiente) {
-            chartAmbiente.data.labels = labels dasHoras;
+            chartAmbiente.data.labels = labelsHoras;
             chartAmbiente.data.datasets[0].data = dadosPassado;
             chartAmbiente.data.datasets[1].data = dadosPrevisao;
             chartAmbiente.update();
@@ -335,7 +327,7 @@ async function consumirDadosClimaCuiaba() {
             chartAmbiente = new Chart(ctxAmbiente, {
                 type: 'line',
                 data: {
-                    labels: labels dasHoras,
+                    labels: labelsHoras,
                     datasets: [
                         {
                             label: 'Histórico Real (-24h)',
@@ -390,11 +382,9 @@ async function consumirDadosClimaCuiaba() {
     }
 }
 
-// Loops de varredura ativa
 setInterval(atualizar, 4000); 
-setInterval(consumirDadosClimaCuiaba, 600000); // Atualiza os dados meteorológicos a cada 10 minutos
+setInterval(consumirDadosClimaCuiaba, 600000); 
 
-// Inicialização imediata
 atualizar();
 consumirDadosClimaCuiaba();
 </script>
