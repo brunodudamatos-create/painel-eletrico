@@ -50,7 +50,6 @@
     .status-alto { background-color: rgba(248, 81, 73, 0.2); border: 1px solid #f85149; color: #ff7b72; }
     .status-baixo { background-color: rgba(88, 166, 255, 0.2); border: 1px solid #58a6ff; color: #79c0ff; }
 
-    /* Layout do Painel do Clima com a Métrica centralizada */
     .painel-ambiente {
         display: flex;
         justify-content: space-between;
@@ -78,7 +77,7 @@
 
 <main>
     <div class="secao">
-        <h2 class="secao-titulo">Visão Geral das Câmaras</h2>
+        <h2 class="secao-titulo">Visão Geral das Câmaras (Histórico de 24h Estabilizado)</h2>
         <div class="camaras-grid" id="grid-principal">
             </div>
     </div>
@@ -97,7 +96,7 @@
                 <div style="color: #8b949e; font-size: 0.7rem; margin-top: 8px; font-family: monospace;">Coord: -15.6626, -55.9732</div>
             </div>
             
-            <div class="col-info direita">
+            <div class="col-info derecha">
                 <span style="color: #00a8ff; font-weight: bold; font-size: 0.95rem;">🔵 Previsão Preditiva (+24h)</span>
                 <p style="margin-top: 5px; line-height: 1.4;">Tendência meteorológica calculada para as próximas 24 horas para manobras preventivas.</p>
             </div>
@@ -186,7 +185,10 @@ configs.forEach(c => {
             responsive: true, 
             maintainAspectRatio: false, 
             plugins: {legend: {display:false}},
-            scales: { y: { suggestedMin: 0, suggestedMax: 22 } }
+            scales: { 
+                x: { ticks: { color: '#8b949e', maxTicksLimit: 8 } },
+                y: { suggestedMin: 0, suggestedMax: 22, ticks: { color: '#8b949e' } } 
+            }
         }
     });
     document.getElementById('ev'+c.id).innerHTML = "Sistema operacional. Monitoramento ativo.";
@@ -202,9 +204,8 @@ function registrarEvento(id, msg, tipo) {
     el.innerHTML = logs.join('<br>');
 }
 
+// FUNÇÃO DE ATUALIZAÇÃO CORRIGIDA: Mantém a escala de 24h sem "andar" a tela
 function atualizar() {
-    const agora = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
-
     configs.forEach(c => {
         let variacao = (Math.random() * 1.2) - 0.6; 
         temperaturasAtuais[c.id] += variacao;
@@ -216,18 +217,15 @@ function atualizar() {
         const chart = charts[c.id];
         const statusBox = document.getElementById('status'+c.id);
         
+        // 1. Atualiza o display numérico
         document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
-        chart.data.labels.push(agora);
-        chart.data.datasets[0].data.push(Number(tempAtual.toFixed(1))); 
-        chart.data.datasets[1].data.push(5);         
-        chart.data.datasets[2].data.push(15);        
+        // 2. CORREÇÃO DA JANELA: Altera somente a ponta final (momento atual), sem dar push/shift
+        const ultimoIndice = chart.data.datasets[0].data.length - 1;
+        chart.data.datasets[0].data[ultimoIndice] = Number(tempAtual.toFixed(1));
         
-        if(chart.data.labels.length > 25) {
-            chart.data.labels.shift();
-            chart.data.datasets.forEach(d => d.data.shift());
-        }
-        chart.update();
+        // Atualiza a visualização em modo 'none' para não causar flickering/travamentos
+        chart.update('none');
 
         // Histerese Industrial de 0.5°C
         let estadoAnterior = estadosCamaras[c.id];
@@ -262,19 +260,16 @@ function atualizar() {
     });
 }
 
-// LÓGICA DE INTEGRAÇÃO AVANÇADA (Ajuste definitivo do nome das variáveis)
+// LOGICA CLIMA OPEN-METEO CUIABÁ
 async function consumirDadosClimaCuiaba() {
-    // Coordenadas especificadas pelo usuário
     const lat = -15.662618;
     const lon = -55.973215;
-    
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&hourly=temperature_2m&timezone=America%2FCuiaba&past_days=1&forecast_days=2`;
 
     try {
         const resposta = await fetch(url);
         const dados = await resposta.json();
 
-        // 1. Atualiza o display central da temperatura atual
         const tempAtualExterna = dados.current.temperature_2m;
         document.getElementById('temp-externa-txt').textContent = tempAtualExterna.toFixed(1) + '°C';
 
@@ -315,7 +310,6 @@ async function consumirDadosClimaCuiaba() {
             }
         }
 
-        // 2. Renderização do Gráfico Unificado Corrigido
         const ctxAmbiente = document.getElementById('chartAmbiente').getContext('2d');
         
         if (chartAmbiente) {
@@ -382,9 +376,11 @@ async function consumirDadosClimaCuiaba() {
     }
 }
 
+// Loops de varredura ativa
 setInterval(atualizar, 4000); 
 setInterval(consumirDadosClimaCuiaba, 600000); 
 
+// Inicialização imediata
 atualizar();
 consumirDadosClimaCuiaba();
 </script>
