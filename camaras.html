@@ -63,7 +63,17 @@
     .col-info { flex: 1; font-size: 0.85rem; color: #8b949e; }
     .col-info.esquerda { text-align: left; border-right: 1px solid #21262d; padding-right: 15px; }
     .col-info.direita { text-align: right; border-left: 1px solid #21262d; padding-left: 15px; }
-    .col-centro { min-width: 250px; padding: 0 20px; }
+    .col-centro { min-width: 320px; padding: 0 20px; }
+
+    .fonte-dados {
+        margin-top: 15px;
+        text-align: right;
+        font-size: 0.75rem;
+        color: #8b949e;
+        font-style: italic;
+    }
+    .fonte-dados a { color: #58a6ff; text-decoration: none; }
+    .fonte-dados a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -85,18 +95,18 @@
     <div class="secao">
         <h2 class="secao-titulo">Perfil Térmico Externo (Cuiabá - Planta/Operação)</h2>
         <div class="painel-ambiente">
-            <div class="col-info esquerda">
+            <div class="col-info osteoarthritis esquerda">
                 <span style="color: #ff9f43; font-weight: bold; font-size: 0.95rem;">🟠 Histórico Real (-24h)</span>
                 <p style="margin-top: 5px; line-height: 1.4;">Comportamento térmico registrado nas últimas 24 horas de operação.</p>
             </div>
             
             <div class="col-centro">
-                <div style="color: #8b949e; font-size: 0.8rem; font-weight: bold; letter-spacing: 1px; margin-bottom: 3px;">AMBIENTE AGORA</div>
+                <div id="timestamp-api" style="color: #8b949e; font-size: 0.75rem; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 5px;">Última Atualização: Carregando...</div>
                 <div id="temp-externa-txt" style="font-size: 3.8rem; font-weight: bold; color: #ff9f43; line-height: 1;">--°C</div>
                 <div style="color: #8b949e; font-size: 0.7rem; margin-top: 8px; font-family: monospace;">Coord: -15.6626, -55.9732</div>
             </div>
             
-            <div class="col-info derecha">
+            <div class="col-info direita">
                 <span style="color: #00a8ff; font-weight: bold; font-size: 0.95rem;">🔵 Previsão Preditiva (+24h)</span>
                 <p style="margin-top: 5px; line-height: 1.4;">Tendência meteorológica calculada para as próximas 24 horas para manobras preventivas.</p>
             </div>
@@ -104,6 +114,10 @@
         
         <div class="chart-container-ambiente">
             <canvas id="chartAmbiente"></canvas>
+        </div>
+        
+        <div class="fonte-dados">
+            Fonte dos dados meteorológicos: <a href="https://open-meteo.com/" target="_blank">Open-Meteo Weather API</a> (Modelos Estacionais Global/Regional)
         </div>
     </div>
 </main>
@@ -204,7 +218,6 @@ function registrarEvento(id, msg, tipo) {
     el.innerHTML = logs.join('<br>');
 }
 
-// FUNÇÃO DE ATUALIZAÇÃO CORRIGIDA: Mantém a escala de 24h sem "andar" a tela
 function atualizar() {
     configs.forEach(c => {
         let variacao = (Math.random() * 1.2) - 0.6; 
@@ -217,17 +230,13 @@ function atualizar() {
         const chart = charts[c.id];
         const statusBox = document.getElementById('status'+c.id);
         
-        // 1. Atualiza o display numérico
         document.getElementById('t'+c.id).textContent = tempAtual.toFixed(1) + '°C';
         
-        // 2. CORREÇÃO DA JANELA: Altera somente a ponta final (momento atual), sem dar push/shift
         const ultimoIndice = chart.data.datasets[0].data.length - 1;
         chart.data.datasets[0].data[ultimoIndice] = Number(tempAtual.toFixed(1));
         
-        // Atualiza a visualização em modo 'none' para não causar flickering/travamentos
         chart.update('none');
 
-        // Histerese Industrial de 0.5°C
         let estadoAnterior = estadosCamaras[c.id];
         if (estadoAnterior === 'NORMAL') {
             if (tempAtual > 15.0) {
@@ -260,7 +269,7 @@ function atualizar() {
     });
 }
 
-// LOGICA CLIMA OPEN-METEO CUIABÁ
+// LÓGICA CLIMA ADAPTADA COM TIMESTAMP DE LEITURA REAL
 async function consumirDadosClimaCuiaba() {
     const lat = -15.662618;
     const lon = -55.973215;
@@ -272,6 +281,12 @@ async function consumirDadosClimaCuiaba() {
 
         const tempAtualExterna = dados.current.temperature_2m;
         document.getElementById('temp-externa-txt').textContent = tempAtualExterna.toFixed(1) + '°C';
+
+        // GERAÇÃO DO TIMESTAMP DINÂMICO DE ATUALIZAÇÃO
+        const agora = new Date();
+        const dataFormatada = agora.toLocaleDateString('pt-BR');
+        const horaFormatadaMomento = agora.toLocaleTimeString('pt-BR');
+        document.getElementById('timestamp-api').textContent = `Última Atualização: ${dataFormatada} - ${horaFormatadaMomento}`;
 
         const hourlyTimes = dados.hourly.time;
         const hourlyTemps = dados.hourly.temperature_2m;
@@ -372,15 +387,13 @@ async function consumirDadosClimaCuiaba() {
         }
     } catch (erro) {
         console.error("Falha crítica ao sincronizar telemetria climática:", erro);
-        document.getElementById('temp-externa-txt').textContent = "API Offline";
+        document.getElementById('timestamp-api').textContent = "Última Atualização: Falha de Comunicação (API)";
     }
 }
 
-// Loops de varredura ativa
 setInterval(atualizar, 4000); 
 setInterval(consumirDadosClimaCuiaba, 600000); 
 
-// Inicialização imediata
 atualizar();
 consumirDadosClimaCuiaba();
 </script>
