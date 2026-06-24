@@ -83,7 +83,7 @@ module.exports = async function handler(req, res) {
     }
 
     return res.status(200).json({
-      timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
       status: 'NORMAL',
       alertas: [],
       eletrico,
