@@ -2,9 +2,12 @@
   "name": "painel-eletrico-dashboard",
   "version": "1.0.0",
   "scripts": {
-    "start": "node server.js" 
+    "start": "node server.js"
   },
   "engines": {
     "node": "24.x"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3"
   }
 }
