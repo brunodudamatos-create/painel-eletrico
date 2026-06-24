@@ -13,58 +13,47 @@
         .hright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
         .ts{font-size:.7rem;color:#8b949e}
         .badge{padding:4px 12px;border-radius:20px;font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:5px;background:#1a4731;color:#3fb950;border:1px solid #238636}
-        .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
         main{padding:18px 28px;max-width:1400px;margin:0 auto}
-        .temp-card{background:linear-gradient(135deg,#1c2a3a,#162032);border:1px solid #1f6feb;border-radius:14px;padding:22px 26px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:20px;align-items:center}
-        .tlabel{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
-        .tnum{font-size:3.6rem;font-weight:700;line-height:1;color:#58a6ff}
-        .tnum span{font-size:1.3rem;font-weight:400;color:#8b949e}
+        .temp-card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:22px 26px;margin-bottom:18px}
+        .tlabel{font-size:.7rem;color:#8b949e;text-transform:uppercase;margin-bottom:6px}
+        .tnum{font-size:2rem;font-weight:700;color:#58a6ff}
         .stitle{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:#8b949e;margin-bottom:11px;display:flex;align-items:center;gap:7px}
         .stitle::after{content:'';flex:1;height:1px;background:#21262d}
         .fases{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px}
         .fc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px}
-        .fc.fa{border-top:3px solid #58a6ff}
-        .fc.fb{border-top:3px solid #3fb950}
-        .fc.fc2{border-top:3px solid #f0883e}
+        .fc.fa{border-top:3px solid #58a6ff}.fc.fb{border-top:3px solid #3fb950}.fc.fc2{border-top:3px solid #f0883e}
         .ftit{font-size:.8rem;font-weight:600;margin-bottom:11px}
-        .med{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid #21262d}
-        .mn{font-size:.72rem;color:#8b949e}
-        .mv{font-size:.92rem;font-weight:600}
-        .mu{font-size:.65rem;color:#8b949e;margin-left:2px}
+        .med{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #21262d}
+        .mn{font-size:.72rem;color:#8b949e}.mv{font-size:.92rem;font-weight:600}.mu{font-size:.65rem;color:#8b949e;margin-left:2px}
         .totais{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
         .tc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 16px}
-        .tval{font-size:1.45rem;font-weight:700}
-        .tunit{font-size:.68rem;color:#8b949e}
-        .chart-container {height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
+        .tval{font-size:1.45rem;font-weight:700}.tunit{font-size:.68rem;color:#8b949e}
+        .chart-container{height:250px;margin-bottom:25px;background:#161b22;padding:10px;border-radius:10px;border:1px solid #30363d}
     </style>
 </head>
 <body>
 <header>
     <h1>⚡ Painel Elétrico — Monitor em Tempo Real</h1>
-    <div class="hright"><span class="ts" id="ts">Conectando...</span><div class="badge">🟢 ONLINE</div></div>
+    <div class="hright"><span class="ts" id="ts">Carregando...</span><div class="badge">🟢 ONLINE</div></div>
 </header>
 <main>
     <div class="temp-card">
-        <div><div class="tlabel">🌡️ Temperatura Painel</div><div class="tnum" id="tval">--<span>°C</span></div></div>
-        <div style="font-size:0.8rem;color:#8b949e">Sistema operacional ativo. Dados sendo lidos em tempo real do banco de dados (Supabase).</div>
+        <div class="tlabel">Status do Sensor</div>
+        <div class="tnum" id="tval">Aguardando Leitura</div>
     </div>
-    
     <div class="stitle">⚡ Medições por Fase</div>
     <div class="fases">
         <div class="fc fa"><div class="ftit">Fase A</div><div class="med"><span class="mn">Tensão</span><span class="mv" id="va">--<span class="mu">V</span></span></div><div class="med"><span class="mn">Corrente</span><span class="mv" id="ia">--<span class="mu">A</span></span></div><div class="med"><span class="mn">Potência</span><span class="mv" id="pa">--<span class="mu">W</span></span></div><div class="med"><span class="mn">FP</span><span class="mv" id="fpa">--</span></div><div class="med"><span class="mn">Energia</span><span class="mv" id="ea">--<span class="mu">kWh</span></span></div></div>
         <div class="fc fb"><div class="ftit">Fase B</div><div class="med"><span class="mn">Tensão</span><span class="mv" id="vb">--<span class="mu">V</span></span></div><div class="med"><span class="mn">Corrente</span><span class="mv" id="ib">--<span class="mu">A</span></span></div><div class="med"><span class="mn">Potência</span><span class="mv" id="pb">--<span class="mu">W</span></span></div><div class="med"><span class="mn">FP</span><span class="mv" id="fpb">--</span></div><div class="med"><span class="mn">Energia</span><span class="mv" id="eb">--<span class="mu">kWh</span></span></div></div>
         <div class="fc fc2"><div class="ftit">Fase C</div><div class="med"><span class="mn">Tensão</span><span class="mv" id="vc">--<span class="mu">V</span></span></div><div class="med"><span class="mn">Corrente</span><span class="mv" id="ic">--<span class="mu">A</span></span></div><div class="med"><span class="mn">Potência</span><span class="mv" id="pc">--<span class="mu">W</span></span></div><div class="med"><span class="mn">FP</span><span class="mv" id="fpc">--</span></div><div class="med"><span class="mn">Energia</span><span class="mv" id="ec">--<span class="mu">kWh</span></span></div></div>
     </div>
-
-    <div class="stitle">📊 Totais do Sistema</div>
+    <div class="stitle">📊 Totais</div>
     <div class="totais">
         <div class="tc"><div class="mn">Potência Total</div><div class="tval" id="ptotal">--</div><div class="tunit">W</div></div>
         <div class="tc"><div class="mn">Energia Total</div><div class="tval" id="etotal">--</div><div class="tunit">kWh</div></div>
         <div class="tc"><div class="mn">Frequência</div><div class="tval" id="freq">--</div><div class="tunit">Hz</div></div>
         <div class="tc"><div class="mn">FP Médio</div><div class="tval" id="fpm">--</div><div class="tunit">cos φ</div></div>
     </div>
-    
     <div class="stitle">📈 Tensões (Volts)</div>
     <div class="chart-container"><canvas id="tensaoChart"></canvas></div>
     <div class="stitle">📈 Correntes (Amperes)</div>
@@ -86,55 +75,29 @@
         el.innerHTML = (!isNaN(n) ? n.toFixed(dec) : '--') + (unit ? `<span class="mu">${unit}</span>` : '');
     }
 
-    // Função para atualizar os gráficos e dados
-    function carregarDados(historico) {
-        // Limpa os dados atuais dos gráficos para carregar o histórico
-        chart.data.labels = [];
-        chart.data.datasets.forEach(s => s.data = []);
-        chartCorrente.data.labels = [];
-        chartCorrente.data.datasets.forEach(s => s.data = []);
+    function processarDados(data) {
+        chart.data.labels = []; chart.data.datasets.forEach(s => s.data = []);
+        chartCorrente.data.labels = []; chartCorrente.data.datasets.forEach(s => s.data = []);
 
-        // Inverte o array para desenhar do mais antigo para o mais novo
-        historico.reverse().forEach((el, index) => {
-            const hora = new Date(el.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
+        const historico = [...data].reverse();
+
+        historico.forEach((el, index) => {
+            // FIX: Forçando o fuso horário de Cuiabá para evitar deslocamento de horas
+            const hora = new Date(el.timestamp).toLocaleTimeString('pt-BR', {
+                timeZone: 'America/Cuiaba', 
+                hour: '2-digit', 
+                minute: '2-digit'
+            });
             
-            // Preenche gráficos
             chart.data.labels.push(hora);
             chart.data.datasets[0].data.push(el.tensao_a); chart.data.datasets[1].data.push(el.tensao_b); chart.data.datasets[2].data.push(el.tensao_c);
             chartCorrente.data.labels.push(hora);
             chartCorrente.data.datasets[0].data.push(el.corrente_a); chartCorrente.data.datasets[1].data.push(el.corrente_b); chartCorrente.data.datasets[2].data.push(el.corrente_c);
 
-            // Se for o último dado (o mais recente), atualiza os cards de texto
             if (index === historico.length - 1) {
-                document.getElementById('ts').textContent = new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
+                document.getElementById('ts').textContent = "Última atualização: " + new Date(el.timestamp).toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
+                document.getElementById('tval').textContent = "Sistema Operacional Normal";
                 set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A'); set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 0, 'kWh');
                 set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A'); set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 0, 'kWh');
                 set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A'); set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 0, 'kWh');
-                set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 0); set('freq', el.frequencia, 1); set('fpm', (el.fat_pot_a + el.fat_pot_b + el.fat_pot_c)/3, 2);
-            }
-        });
-
-        chart.update();
-        chartCorrente.update();
-    }
-
-    async function atualizar() {
-        try {
-            // BUSCA 36 REGISTROS
-            const r = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=*&limit=36&order=id.desc`, { 
-                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
-            if(!r.ok) throw new Error();
-            const data = await r.json();
-            if(data.length > 0) { 
-                carregarDados(data); 
-            }
-        } catch(e) { console.error("Erro ao buscar dados:", e); }
-    }
-    
-    // Mude 300000 para o tempo que desejar (aqui está 5 min)
-    setInterval(atualizar, 300000); 
-    atualizar();
-</script>
-</body>
-</html>
+                set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 0); set('freq', el.frequencia, 1); set('fpm', (el.fat_pot
