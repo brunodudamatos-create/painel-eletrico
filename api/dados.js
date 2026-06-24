@@ -1,9 +1,13 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// PAINEL ELÉTRICO — TUYA SHADOW ENDPOINT (FINAL)
+// PAINEL ELÉTRICO — TUYA SHADOW ENDPOINT (FINAL COM SUPABASE)
 // ================================================================
 
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
+
+// Inicializa o Supabase com as variáveis da Vercel
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 function gerarAssinaturaTuya(clientId, secret, timestamp, method, urlPath, accessToken = '', body = '') {
   const contentHash = crypto.createHash('sha256').update(body).digest('hex');
@@ -12,7 +16,6 @@ function gerarAssinaturaTuya(clientId, secret, timestamp, method, urlPath, acces
   return crypto.createHmac('sha256', secret).update(cadeiaFinal).digest('hex').toUpperCase();
 }
 
-// Busca o valor direto na lista de 'properties' do Shadow
 function dpShadow(props, codigo) {
   const item = (props || []).find(i => i.code === codigo);
   return item !== undefined ? item.value : null;
@@ -35,7 +38,6 @@ module.exports = async function handler(req, res) {
     const tokenData = await tokenRes.json();
     const token = tokenData.result?.access_token;
 
-    // CONSULTA O SHADOW (Onde estão os dados reais)
     const t2 = Date.now().toString();
     const urlShadow = `/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`;
     const resShadow = await fetch(`${BASE_URL}${urlShadow}`, {
@@ -44,7 +46,6 @@ module.exports = async function handler(req, res) {
     const dataShadow = await resShadow.json();
     const props = dataShadow.result?.properties || [];
 
-    // MAPEAMENTO E CONVERSÃO DE UNIDADES
     const eletrico = {
       tensao_a: dpShadow(props, 'voltage_a') != null ? (dpShadow(props, 'voltage_a') / 10).toFixed(1) : null,
       corrente_a: dpShadow(props, 'current_a') != null ? (dpShadow(props, 'current_a') / 1000).toFixed(2) : null,
@@ -70,12 +71,24 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
+    // GRAVAÇÃO NO SUPABASE
+    const { error: dbError } = await supabase
+      .from('telemetria_eletrica')
+      .insert([eletrico]);
+
+    if (dbError) {
+      console.error("Erro ao salvar no Supabase:", dbError);
+      // Retorna erro 500 se falhar a gravação no banco, mas mostra os dados lidos
+      return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError, eletrico });
+    }
+
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
       status: 'NORMAL',
       alertas: [],
       eletrico,
-      temperatura: { temp_atual: null }
+      temperatura: { temp_atual: null },
+      banco_dados: "Gravação Sucesso"
     });
 
   } catch (err) {
