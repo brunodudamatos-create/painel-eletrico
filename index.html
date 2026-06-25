@@ -186,7 +186,7 @@
 const API_URL = 'https://painel-eletrico.vercel.app/api/dados'; 
 let ultimaAtualizacao = Date.now();
 
-// Gráfico original de Tensão
+// --- INICIALIZA OS GRÁFICOS ---
 const ctx = document.getElementById('tensaoChart').getContext('2d');
 const chart = new Chart(ctx, {
     type: 'line',
@@ -198,7 +198,6 @@ const chart = new Chart(ctx, {
     options: { responsive: true, maintainAspectRatio: false }
 });
 
-// Gráfico de Corrente
 const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
 const chartCorrente = new Chart(ctxCorrente, {
     type: 'line',
@@ -210,6 +209,61 @@ const chartCorrente = new Chart(ctxCorrente, {
     options: { responsive: true, maintainAspectRatio: false }
 });
 
+// --- DESENHA O GRÁFICO ---
+function renderizarGraficos(dadosParaGrafico) {
+  // Mantém apenas os últimos 288 registros (24 horas)
+  if (dadosParaGrafico.length > 288) dadosParaGrafico = dadosParaGrafico.slice(-288);
+
+  chart.data.labels = dadosParaGrafico.map(p => p.hora);
+  chart.data.datasets[0].data = dadosParaGrafico.map(p => p.va);
+  chart.data.datasets[1].data = dadosParaGrafico.map(p => p.vb);
+  chart.data.datasets[2].data = dadosParaGrafico.map(p => p.vc);
+
+  chartCorrente.data.labels = dadosParaGrafico.map(p => p.hora);
+  chartCorrente.data.datasets[0].data = dadosParaGrafico.map(p => p.ia);
+  chartCorrente.data.datasets[1].data = dadosParaGrafico.map(p => p.ib);
+  chartCorrente.data.datasets[2].data = dadosParaGrafico.map(p => p.ic);
+
+  chart.update();
+  chartCorrente.update();
+}
+
+// --- MEMÓRIA DO NAVEGADOR ---
+let historico = [];
+try {
+  const salvo = localStorage.getItem('painel_frutas_historico');
+  if (salvo) {
+      historico = JSON.parse(salvo);
+      renderizarGraficos(historico); // Desenha o que estava salvo imediatamente
+  }
+} catch(e) {}
+
+// --- ADICIONA NOVO PONTO AO GRÁFICO ---
+function processarDadoIndividual(registro) {
+  const el = registro.eletrico;
+  if (!el) return;
+
+  const horaAtual = new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
+  const novoPonto = {
+    hora: horaAtual,
+    va: el.tensao_a, vb: el.tensao_b, vc: el.tensao_c,
+    ia: el.corrente_a, ib: el.corrente_b, ic: el.corrente_c
+  };
+
+  // Evita duplicar se atualizar muito rápido no mesmo minuto
+  if (historico.length > 0 && historico[historico.length - 1].hora === horaAtual) {
+    historico[historico.length - 1] = novoPonto;
+  } else {
+    historico.push(novoPonto);
+  }
+
+  if (historico.length > 288) historico.shift();
+  localStorage.setItem('painel_frutas_historico', JSON.stringify(historico)); // Salva na memória
+
+  renderizarGraficos(historico);
+}
+
+// --- UTILITÁRIOS E TEXTOS ---
 function set(id, val, dec, unit) {
   const el = document.getElementById(id);
   if (!el || val === null || val === undefined) return;
@@ -218,49 +272,7 @@ function set(id, val, dec, unit) {
   el.innerHTML = n.toFixed(dec) + (unit ? `<span class="mu">${unit}</span>` : '');
 }
 
-// NOVO: Alimenta os gráficos reconstruindo os pontos com o histórico real recebido da API
-function renderizarGraficosComHistorico(listaDeDados) {
-  chart.data.labels = [];
-  chart.data.datasets[0].data = [];
-  chart.data.datasets[1].data = [];
-  chart.data.datasets[2].data = [];
-
-  chartCorrente.data.labels = [];
-  chartCorrente.data.datasets[0].data = [];
-  chartCorrente.data.datasets[1].data = [];
-  chartCorrente.data.datasets[2].data = [];
-
-  listaDeDados.forEach(registro => {
-    if (registro.eletrico) {
-      // Se a sua API enviar um campo 'hora' ou 'created_at', ele usa. Senão, calcula pelo momento da leitura.
-      const horaLeitura = registro.hora || new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
-      
-      chart.data.labels.push(horaLeitura);
-      chart.data.datasets[0].data.push(registro.eletrico.tensao_a);
-      chart.data.datasets[1].data.push(registro.eletrico.tensao_b);
-      chart.data.datasets[2].data.push(registro.eletrico.tensao_c);
-
-      chartCorrente.data.labels.push(horaLeitura);
-      chartCorrente.data.datasets[0].data.push(registro.eletrico.corrente_a);
-      chartCorrente.data.datasets[1].data.push(registro.eletrico.corrente_b);
-      chartCorrente.data.datasets[2].data.push(registro.eletrico.corrente_c);
-    }
-  });
-
-  // Limita a exibição visual a no máximo 288 pontos (24 horas)
-  if (chart.data.labels.length > 288) {
-    chart.data.labels = chart.data.labels.slice(-288);
-    chart.data.datasets.forEach(s => s.data = s.data.slice(-288));
-    chartCorrente.data.labels = chartCorrente.data.labels.slice(-288);
-    chartCorrente.data.datasets.forEach(s => s.data = s.data.slice(-288));
-  }
-
-  chart.update();
-  chartCorrente.update();
-}
-
 function render(d) {
-  // Ajuste do horário local Cuiabá
   document.getElementById('ts').textContent = "Atualizado: " + new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
 
   const badge = document.getElementById('badge');
@@ -306,7 +318,6 @@ function render(d) {
     set('freq', el.frequencia, 1);
     set('fpm', el.fat_pot_medio, 2);
 
-    // Lógica de Alertas Inteligente
     let alertas = [];
     const fases = [{n: 'Fase A', v: el.tensao_a}, {n: 'Fase B', v: el.tensao_b}, {n: 'Fase C', v: el.tensao_c}];
     fases.forEach(f => {
@@ -336,23 +347,15 @@ function dispararAlarmeFalha() {
     badge.className = 'badge offline';
 }
 
+// --- LÓGICA PRINCIPAL DE BUSCA ---
 async function atualizar() { 
   try { 
     const r = await fetch(API_URL); 
     if(r.ok) {
         const respostaAPI = await r.json();
         
-        // LOGICA INTELIGENTE DE DETECÇÃO:
-        if (Array.isArray(respostaAPI) && respostaAPI.length > 0) {
-            // Se a Vercel trouxer a lista histórica do Supabase (Array de objetos):
-            const ultimoRegistro = respostaAPI[respostaAPI.length - 1]; // Pega o mais recente
-            render(ultimoRegistro);                                      // Atualiza os cartões textuais
-            renderizarGraficosComHistorico(respostaAPI);                 // Monta a linha do tempo completa
-        } else {
-            // Caso a API ainda esteja retornando apenas 1 objeto isolado (fallback de segurança):
-            render(respostaAPI);
-            renderizarGraficosComHistorico([respostaAPI]);
-        }
+        render(respostaAPI); // Atualiza os blocos de texto
+        processarDadoIndividual(respostaAPI); // Joga o novo dado pro gráfico e salva
         
         ultimaAtualizacao = Date.now(); 
     } else {
@@ -366,7 +369,6 @@ async function atualizar() {
   } 
 }
 
-// Inicialização imediata e loop fixo de 5 minutos (300000ms)
 atualizar();
 setInterval(atualizar, 300000);
 </script>
