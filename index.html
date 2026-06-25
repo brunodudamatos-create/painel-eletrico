@@ -183,14 +183,10 @@
 <footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
 
 <script>
-// --- CREDENCIAIS DO SEU SUPABASE ---
-const SUPABASE_URL = 'https://clsppqtiwelfoefsqyra.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsc3BwcXRpd2VsZm9lZnNxeXJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNjgyMjYsImV4cCI6MjA5Nzc0NDIyNn0.8Ox3b_pPYg3CPcy7yRhmPhta905UIUfznVGxo_ZQzhg';
-const TABLE_NAME = 'telemetria_eletrica';
-
+const API_URL = 'https://painel-eletrico.vercel.app/api/dados'; 
 let ultimaAtualizacao = Date.now();
 
-// --- INICIALIZAÇÃO DOS GRÁFICOS ---
+// Gráfico original de Tensão (Intacto)
 const ctx = document.getElementById('tensaoChart').getContext('2d');
 const chart = new Chart(ctx, {
     type: 'line',
@@ -202,6 +198,7 @@ const chart = new Chart(ctx, {
     options: { responsive: true, maintainAspectRatio: false }
 });
 
+// NOVO: Gráfico de Corrente
 const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
 const chartCorrente = new Chart(ctxCorrente, {
     type: 'line',
@@ -213,7 +210,6 @@ const chartCorrente = new Chart(ctxCorrente, {
     options: { responsive: true, maintainAspectRatio: false }
 });
 
-// --- FUNÇÕES UTILITÁRIAS ---
 function set(id, val, dec, unit) {
   const el = document.getElementById(id);
   if (!el || val === null || val === undefined) return;
@@ -222,169 +218,116 @@ function set(id, val, dec, unit) {
   el.innerHTML = n.toFixed(dec) + (unit ? `<span class="mu">${unit}</span>` : '');
 }
 
-// Função inteligente que tenta buscar a coluna no banco, lidando com Letras Maiúsculas ou Minúsculas
-function getVal(item, key) {
-    const val = item[key] ?? item[key.toLowerCase()] ?? item[key.toUpperCase()] ?? 0;
-    return parseFloat(val) || 0;
+function render(d) {
+  // Ajuste do horário local Cuiabá
+  document.getElementById('ts').textContent = new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
+
+  const badge = document.getElementById('badge');
+  badge.textContent = d.status === 'ALERTA' ? '🟡 ALERTA' : '🟢 NORMAL';
+  badge.className = 'badge' + (d.status === 'ALERTA' ? ' alerta' : '');
+  
+  // Reseta estado da caixa de erro se voltou a funcionar
+  const abox = document.getElementById('abox');
+  abox.classList.remove('falha-rede');
+  document.getElementById('atitle').textContent = '⚠️ Alertas Ativos';
+
+  const t = d.temperatura;
+  if (t) {
+    const temp = parseFloat(t.temp_atual);
+    const tval = document.getElementById('tval');
+    tval.innerHTML = (!isNaN(temp) ? temp.toFixed(1) : '--') + '<span>°C</span>';
+    tval.className = 'tnum' + (temp >= 50 ? ' critico' : temp >= 38 ? ' quente' : '');
+    document.getElementById('tset').textContent = t.temp_setpoint != null ? t.temp_setpoint + '°C' : '--°C';
+    const pct = Math.min(100, Math.max(0, (temp/60)*100));
+    document.getElementById('gfill').style.width = (isNaN(pct)?0:pct) + '%';
+    const ael = document.getElementById('alarme');
+    ael.textContent = t.alarme_temp ? '🔴 ATIVO' : 'Inativo';
+    ael.style.color = t.alarme_temp ? '#f85149' : '#3fb950';
+    document.getElementById('fmodo').textContent = t.modo || '--';
+    const fi = document.getElementById('ficon');
+    const fb = document.getElementById('fbadge');
+    if (t.ventilador_ligado) { fi.classList.add('spin'); fb.textContent = 'VENTILADOR ON'; fb.className = 'fbadge'; }
+    else { fi.classList.remove('spin'); fb.textContent = 'VENTILADOR OFF'; fb.className = 'fbadge off'; }
+  }
+
+  const el = d.eletrico;
+  if (el) {
+    set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A');
+    set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2);
+    set('ea', el.energia_a, 2, 'kWh');
+    set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A');
+    set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2);
+    set('eb', el.energia_b, 2, 'kWh');
+    set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A');
+    set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2);
+    set('ec', el.energia_c, 2, 'kWh');
+    set('ptotal', el.potencia_total, 0);
+    set('etotal', el.energia_total, 2);
+    set('freq', el.frequencia, 1);
+    set('fpm', el.fat_pot_medio, 2);
+
+    // Lógica de Alertas Inteligente
+    let alertas = [];
+    const fases = [{n: 'Fase A', v: el.tensao_a}, {n: 'Fase B', v: el.tensao_b}, {n: 'Fase C', v: el.tensao_c}];
+    fases.forEach(f => {
+        if (f.v > 133) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 133 V`);
+        else if (f.v < 111) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
+    });
+
+    if(alertas.length > 0) { abox.classList.add('show'); document.getElementById('alist').innerHTML = alertas.map(a => `<div class="ai">${a}</div>`).join(''); } 
+    else abox.classList.remove('show');
+
+    // Gráfico de Tensão (Intacto)
+    const agora = new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba'});
+    chart.data.labels.push(agora);
+    chart.data.datasets[0].data.push(el.tensao_a);
+    chart.data.datasets[1].data.push(el.tensao_b);
+    chart.data.datasets[2].data.push(el.tensao_c);
+    if(chart.data.labels.length > 288) { chart.data.labels.shift(); chart.data.datasets.forEach(s => s.data.shift()); }
+    chart.update();
+
+    // NOVO: Gráfico de Corrente
+    chartCorrente.data.labels.push(agora);
+    chartCorrente.data.datasets[0].data.push(el.corrente_a);
+    chartCorrente.data.datasets[1].data.push(el.corrente_b);
+    chartCorrente.data.datasets[2].data.push(el.corrente_c);
+    if(chartCorrente.data.labels.length > 288) { chartCorrente.data.labels.shift(); chartCorrente.data.datasets.forEach(s => s.data.shift()); }
+    chartCorrente.update();
+  }
 }
 
 function dispararAlarmeFalha() {
     const abox = document.getElementById('abox');
     abox.classList.add('show', 'falha-rede');
-    document.getElementById('atitle').textContent = '⚠️ ERRO DE CONEXÃO';
-    document.getElementById('alist').innerHTML = '<div class="ai" style="color:#f85149; font-weight:bold;">🚨 OFFLINE: Falha de comunicação com o Banco de Dados.</div>';
+    document.getElementById('atitle').textContent = '⚠️ ERRO DE SISTEMA';
+    document.getElementById('alist').innerHTML = '<div class="ai" style="color:#f85149; font-weight:bold;">🚨 OFFLINE: Falha na rede, Vercel ou equipamento parou.</div>';
     
     const badge = document.getElementById('badge');
     badge.textContent = '🔴 OFFLINE';
     badge.className = 'badge offline';
 }
 
-// --- SIMULADOR DE TEMPERATURA ---
-function simularTemperatura() {
-    // Simula uma temperatura flutuando entre 35°C e 42°C
-    const tempSimulada = 35 + (Math.random() * 7); 
-    const setpoint = 38;
-    
-    return {
-        temp_atual: tempSimulada.toFixed(1),
-        temp_setpoint: setpoint,
-        alarme_temp: tempSimulada >= 60,
-        modo: 'Automático',
-        ventilador_ligado: tempSimulada >= setpoint
-    };
-}
-
-// --- RENDERIZAR INTERFACE ---
-function renderUI(dadosBanco) {
-  if (!dadosBanco || dadosBanco.length === 0) return;
-
-  // 1. Limpa os gráficos para redesenhar com os 36 registros recentes
-  chart.data.labels = []; chart.data.datasets.forEach(s => s.data = []);
-  chartCorrente.data.labels = []; chartCorrente.data.datasets.forEach(s => s.data = []);
-
-  // O banco envia os mais novos primeiro. Invertemos para o gráfico ir da esquerda (velho) para direita (novo)
-  const historico = [...dadosBanco].reverse();
-  const registroMaisRecente = historico[historico.length - 1]; // Pega a leitura exata do momento
-
-  // 2. Popula os gráficos
-  historico.forEach(el => {
-      // Tenta achar a data correta no banco
-      const ts = el.timestamp || el.created_at || new Date().toISOString();
-      const hora = new Date(ts).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
-
-      chart.data.labels.push(hora);
-      chart.data.datasets[0].data.push(getVal(el, 'tensao_a'));
-      chart.data.datasets[1].data.push(getVal(el, 'tensao_b'));
-      chart.data.datasets[2].data.push(getVal(el, 'tensao_c'));
-
-      chartCorrente.data.labels.push(hora);
-      chartCorrente.data.datasets[0].data.push(getVal(el, 'corrente_a'));
-      chartCorrente.data.datasets[1].data.push(getVal(el, 'corrente_b'));
-      chartCorrente.data.datasets[2].data.push(getVal(el, 'corrente_c'));
-  });
-
-  chart.update(); 
-  chartCorrente.update();
-
-  // 3. Atualiza relógio e reseta badge offline
-  const dataRecente = registroMaisRecente.timestamp || registroMaisRecente.created_at || new Date().toISOString();
-  document.getElementById('ts').textContent = "Atualizado: " + new Date(dataRecente).toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
-
-  const abox = document.getElementById('abox');
-  abox.classList.remove('falha-rede');
-  document.getElementById('atitle').textContent = '⚠️ Alertas Ativos';
-  const badge = document.getElementById('badge');
-  badge.textContent = '🟢 NORMAL';
-  badge.className = 'badge';
-
-  // 4. Atualiza Medições Elétricas (Blocos de texto)
-  const el = registroMaisRecente;
-  set('va', getVal(el, 'tensao_a'), 1, 'V'); set('ia', getVal(el, 'corrente_a'), 2, 'A'); set('pa', getVal(el, 'potencia_a'), 0, 'W'); set('fpa', getVal(el, 'fat_pot_a'), 2); set('ea', getVal(el, 'energia_a'), 2, 'kWh');
-  set('vb', getVal(el, 'tensao_b'), 1, 'V'); set('ib', getVal(el, 'corrente_b'), 2, 'A'); set('pb', getVal(el, 'potencia_b'), 0, 'W'); set('fpb', getVal(el, 'fat_pot_b'), 2); set('eb', getVal(el, 'energia_b'), 2, 'kWh');
-  set('vc', getVal(el, 'tensao_c'), 1, 'V'); set('ic', getVal(el, 'corrente_c'), 2, 'A'); set('pc', getVal(el, 'potencia_c'), 0, 'W'); set('fpc', getVal(el, 'fat_pot_c'), 2); set('ec', getVal(el, 'energia_c'), 2, 'kWh');
-  
-  set('ptotal', getVal(el, 'potencia_total'), 0);
-  set('etotal', getVal(el, 'energia_total'), 2);
-  set('freq', getVal(el, 'frequencia'), 1);
-  // Se a API não mandar FP Medio pronto, calculamos a média das 3 fases
-  const fpMedioCalc = (getVal(el, 'fat_pot_a') + getVal(el, 'fat_pot_b') + getVal(el, 'fat_pot_c')) / 3;
-  set('fpm', getVal(el, 'fat_pot_medio') || fpMedioCalc, 2);
-
-  // 5. Lógica de Alertas Elétricos
-  let alertas = [];
-  const fases = [{n: 'Fase A', v: getVal(el, 'tensao_a')}, {n: 'Fase B', v: getVal(el, 'tensao_b')}, {n: 'Fase C', v: getVal(el, 'tensao_c')}];
-  fases.forEach(f => {
-      if (f.v > 133) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 133 V`);
-      else if (f.v < 111 && f.v > 0) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
-  });
-
-  if(alertas.length > 0) { 
-      abox.classList.add('show'); 
-      document.getElementById('alist').innerHTML = alertas.map(a => `<div class="ai">${a}</div>`).join(''); 
-      badge.textContent = '🟡 ALERTA';
-      badge.className = 'badge alerta';
-  } else { 
-      abox.classList.remove('show'); 
-  }
-
-  // 6. Atualiza Temperatura Simulada
-  const t = simularTemperatura();
-  const temp = parseFloat(t.temp_atual);
-  const tval = document.getElementById('tval');
-  
-  tval.innerHTML = temp.toFixed(1) + '<span>°C</span>';
-  tval.className = 'tnum' + (temp >= 50 ? ' critico' : temp >= 38 ? ' quente' : '');
-  document.getElementById('tset').textContent = t.temp_setpoint + '°C';
-  
-  const pct = Math.min(100, Math.max(0, (temp/60)*100));
-  document.getElementById('gfill').style.width = pct + '%';
-  
-  const ael = document.getElementById('alarme');
-  ael.textContent = t.alarme_temp ? '🔴 ATIVO' : 'Inativo';
-  ael.style.color = t.alarme_temp ? '#f85149' : '#3fb950';
-  document.getElementById('fmodo').textContent = t.modo;
-  
-  const fi = document.getElementById('ficon');
-  const fb = document.getElementById('fbadge');
-  if (t.ventilador_ligado) { 
-      fi.classList.add('spin'); 
-      fb.textContent = 'VENTILADOR ON'; 
-      fb.className = 'fbadge'; 
-  } else { 
-      fi.classList.remove('spin'); 
-      fb.textContent = 'VENTILADOR OFF'; 
-      fb.className = 'fbadge off'; 
-  }
-}
-
-// --- CONEXÃO COM BANCO DE DADOS ---
 async function atualizar() { 
   try { 
-    // Pede EXATAMENTE os últimos 36 registros (limit=36)
-    const url = `${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=*&limit=36&order=timestamp.desc`;
-    const r = await fetch(url, { 
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-    }); 
-    
+    const r = await fetch(API_URL); 
     if(r.ok) {
-        const dados = await r.json();
-        renderUI(dados); 
-        ultimaAtualizacao = Date.now();
+        render(await r.json()); 
+        ultimaAtualizacao = Date.now(); // Atualiza o relógio de segurança
     } else {
-        throw new Error('Supabase não respondeu com sucesso');
+        throw new Error('API não respondeu com sucesso');
     }
   } catch(e) { 
     console.log('Falha na comunicação:', e); 
-    if (Date.now() - ultimaAtualizacao > 660000) { // 11 minutos sem dados
+    // Se passar de 11 minutos (660000ms) sem receber dados, dispara o offline
+    if (Date.now() - ultimaAtualizacao > 660000) {
         dispararAlarmeFalha();
     }
   } 
 }
 
-// Inicia chamando imediatamente, e depois repete a cada 5 minutos (300000 ms)
-atualizar();
+// Atualiza a cada 5 minutos (300.000 milissegundos)
 setInterval(atualizar, 300000);
-
+atualizar();
 </script>
 </body>
 </html>
