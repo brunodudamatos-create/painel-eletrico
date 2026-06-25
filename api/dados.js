@@ -1,6 +1,6 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// PAINEL ELÉTRICO — TUYA SHADOW ENDPOINT (FINAL COM SUPABASE)
+// PAINEL ELÉTRICO — TUYA SHADOW ENDPOINT (FINAL COM SUPABASE E TELEGRAM)
 // ================================================================
 
 const crypto = require('crypto');
@@ -8,6 +8,28 @@ const { createClient } = require('@supabase/supabase-js');
 
 // Inicializa o Supabase com as variáveis da Vercel
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// FUNÇÃO DE DISPARO DO TELEGRAM (Dados reais inseridos)
+async function enviarAlertaTelegram(mensagem) {
+  const BOT_TOKEN = '8705676767:AAGp7WgKOJ02O7Q8P-h3NQNnsnmZjqKiahU';
+  const CHAT_ID = '1213251946'; 
+  
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+  
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text: message,
+        parse_mode: 'Markdown'
+      })
+    });
+  } catch (error) {
+    console.error("Erro ao disparar alerta para o Telegram:", error);
+  }
+}
 
 function gerarAssinaturaTuya(clientId, secret, timestamp, method, urlPath, accessToken = '', body = '') {
   const contentHash = crypto.createHash('sha256').update(body).digest('hex');
@@ -71,6 +93,31 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
+    // LÓGICA DE AVALIAÇÃO DOS ALARMES
+    let alertas = [];
+    
+    const ta = parseFloat(eletrico.tensao_a);
+    const tb = parseFloat(eletrico.tensao_b);
+    const tc = parseFloat(eletrico.tensao_c);
+
+    // Avaliação Fase A
+    if (ta > 133) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
+    if (ta < 111 && ta > 0) alertas.push(`*Fase A:* Baixa tensão (${ta}V)`);
+
+    // Avaliação Fase B
+    if (tb > 133) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
+    if (tb < 111 && tb > 0) alertas.push(`*Fase B:* Baixa tensão (${tb}V)`);
+
+    // Avaliação Fase C
+    if (tc > 133) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
+    if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
+
+    // Se houver anomalias, envia a notificação para o Telegram antes de salvar no banco
+    if (alertas.length > 0) {
+      const textoFinal = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${alertas.join('\n')}`;
+      await enviarAlertaTelegram(textoFinal);
+    }
+
     // GRAVAÇÃO NO SUPABASE
     const { error: dbError } = await supabase
       .from('telemetria_eletrica')
@@ -78,7 +125,6 @@ module.exports = async function handler(req, res) {
 
     if (dbError) {
       console.error("Erro ao salvar no Supabase:", dbError);
-      // Retorna erro 500 se falhar a gravação no banco, mas mostra os dados lidos
       return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError, eletrico });
     }
 
