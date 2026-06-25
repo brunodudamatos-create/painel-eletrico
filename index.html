@@ -61,9 +61,9 @@
 
   .fases{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px}
   .fc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px}
-  .fc.fa{border-top:3px solid #58a6ff}
-  .fc.fb{border-top:3px solid #3fb950}
-  .fc.fc2{border-top:3px solid #f0883e}
+  .fc.fa {border-top:3px solid #58a6ff}
+  .fc.fb {border-top:3px solid #3fb950}
+  .fc.fc2 {border-top:3px solid #f0883e}
   .ftit{font-size:.8rem;font-weight:600;margin-bottom:11px}
   .fc.fa .ftit{color:#58a6ff}
   .fc.fb .ftit{color:#3fb950}
@@ -108,23 +108,23 @@
 <main>
   <div class="temp-card">
     <div>
-      <div class="tlabel">🌡️ Temperatura do Painel</div>
-      <div class="tnum" id="tval">--<span>°C</span></div>
-      <div class="tsub">Setpoint ventilador: <b id="tset">--°C</b></div>
+      <div class="tlabel">🌡️ Temperatura do Painel (Simulação)</div>
+      <div class="tnum" id="tval">35.0<span>°C</span></div>
+      <div class="tsub">Setpoint ventilador: <b id="tset">38.0°C</b></div>
     </div>
     <div class="gauge-wrap">
       <div class="gtitle">Nível de temperatura (0°C → 60°C)</div>
-      <div class="gbar"><div class="gfill" id="gfill" style="width:0%"></div></div>
+      <div class="gbar"><div class="gfill" id="gfill" style="width:58%"></div></div>
       <div class="glabels"><span>0°C</span><span style="color:#d29922">38°C ⚠️</span><span style="color:#f85149">60°C 🔴</span></div>
       <div class="ginfo">
         <span>Alarme: <span id="alarme" style="color:#3fb950">Inativo</span></span>
-        <span>Modo: <span id="fmodo">--</span></span>
+        <span>Modo: <span id="fmodo">AUTOMÁTICO</span></span>
       </div>
     </div>
     <div class="fan-box">
       <div class="ficon" id="ficon">🌀</div>
       <div class="fbadge off" id="fbadge">VENTILADOR OFF</div>
-      <div class="fmodo" id="fmodolab"></div>
+      <div class="fmodo" id="fmodolab">Teste de Hardware Pendente</div>
     </div>
   </div>
 
@@ -180,13 +180,72 @@
   </div>
 </main>
 
-<footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
+<footer>Atualização elétrica a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
 
 <script>
 const API_URL = 'https://painel-eletrico.vercel.app/api/dados'; 
 let ultimaAtualizacao = Date.now();
 
-// --- INICIALIZA OS GRÁFICOS ---
+// --- VARIÁVEIS DA SIMULAÇÃO LOCAL DA TEMPERATURA ---
+let tempSimulada = 34.8;
+let ventiladorLigado = false;
+const SETPOINT_ON = 38.0;
+const SETPOINT_OFF = 34.5;
+
+// Lógica que roda a cada 2 segundos simulando o termostato real
+function simularTermostato() {
+  if (!ventiladorLigado && tempSimulada >= SETPOINT_ON) {
+    ventiladorLigado = true;
+  } else if (ventiladorLigado && tempSimulada <= SETPOINT_OFF) {
+    ventiladorLigado = false;
+  }
+
+  // Se o ventilador tá ON resfria, se tá OFF o calor do painel sobe a temperatura
+  if (ventiladorLigado) {
+    tempSimulada -= 0.15; 
+  } else {
+    tempSimulada += 0.08; 
+  }
+
+  // Atualização Visual dos Elementos de Temperatura
+  const tval = document.getElementById('tval');
+  if (tval) {
+    tval.innerHTML = tempSimulada.toFixed(1) + '<span>°C</span>';
+    tval.className = 'tnum' + (tempSimulada >= 50 ? ' critico' : tempSimulada >= 38 ? ' quente' : '');
+  }
+
+  const pct = Math.min(100, Math.max(0, (tempSimulada / 60) * 100));
+  if (document.getElementById('gfill')) {
+    document.getElementById('gfill').style.width = pct + '%';
+  }
+
+  const ael = document.getElementById('alarme');
+  if (ael) {
+    let alarmeCritico = tempSimulada >= 43.0; // Alerta crítico visual se passar de 43°C
+    ael.textContent = alarmeCritico ? '🔴 ATIVO' : 'Inativo';
+    ael.style.color = alarmeCritico ? '#f85149' : '#3fb950';
+  }
+
+  const fi = document.getElementById('ficon');
+  const fb = document.getElementById('fbadge');
+  if (fi && fb) {
+    if (ventiladorLigado) {
+      fi.classList.add('spin');
+      fb.textContent = 'VENTILADOR ON';
+      fb.className = 'fbadge';
+    } else {
+      fi.classList.remove('spin');
+      fb.textContent = 'VENTILADOR OFF';
+      fb.className = 'fbadge off';
+    }
+  }
+}
+
+// Inicializa a simulação da temperatura rodando de 2 em 2 segundos
+setInterval(simularTermostato, 2000);
+
+
+// --- INICIALIZAÇÃO DOS GRÁFICOS (EIXO ELÉTRICO) ---
 const ctx = document.getElementById('tensaoChart').getContext('2d');
 const chart = new Chart(ctx, {
     type: 'line',
@@ -209,9 +268,7 @@ const chartCorrente = new Chart(ctxCorrente, {
     options: { responsive: true, maintainAspectRatio: false }
 });
 
-// --- DESENHA O GRÁFICO ---
 function renderizarGraficos(dadosParaGrafico) {
-  // Mantém apenas os últimos 288 registros (24 horas)
   if (dadosParaGrafico.length > 288) dadosParaGrafico = dadosParaGrafico.slice(-288);
 
   chart.data.labels = dadosParaGrafico.map(p => p.hora);
@@ -228,17 +285,16 @@ function renderizarGraficos(dadosParaGrafico) {
   chartCorrente.update();
 }
 
-// --- MEMÓRIA DO NAVEGADOR ---
+// Carrega histórico salvo na memória local para o gráfico não resetar ao atualizar a página
 let historico = [];
 try {
   const salvo = localStorage.getItem('painel_frutas_historico');
   if (salvo) {
       historico = JSON.parse(salvo);
-      renderizarGraficos(historico); // Desenha o que estava salvo imediatamente
+      renderizarGraficos(historico);
   }
 } catch(e) {}
 
-// --- ADICIONA NOVO PONTO AO GRÁFICO ---
 function processarDadoIndividual(registro) {
   const el = registro.eletrico;
   if (!el) return;
@@ -250,7 +306,6 @@ function processarDadoIndividual(registro) {
     ia: el.corrente_a, ib: el.corrente_b, ic: el.corrente_c
   };
 
-  // Evita duplicar se atualizar muito rápido no mesmo minuto
   if (historico.length > 0 && historico[historico.length - 1].hora === horaAtual) {
     historico[historico.length - 1] = novoPonto;
   } else {
@@ -258,12 +313,12 @@ function processarDadoIndividual(registro) {
   }
 
   if (historico.length > 288) historico.shift();
-  localStorage.setItem('painel_frutas_historico', JSON.stringify(historico)); // Salva na memória
+  localStorage.setItem('painel_frutas_historico', JSON.stringify(historico));
 
   renderizarGraficos(historico);
 }
 
-// --- UTILITÁRIOS E TEXTOS ---
+// --- CONFIGURAÇÃO DOS TEXTOS ELÉTRICOS ---
 function set(id, val, dec, unit) {
   const el = document.getElementById(id);
   if (!el || val === null || val === undefined) return;
@@ -283,24 +338,7 @@ function render(d) {
   abox.classList.remove('falha-rede');
   document.getElementById('atitle').textContent = '⚠️ Alertas Ativos';
 
-  const t = d.temperatura;
-  if (t) {
-    const temp = parseFloat(t.temp_atual);
-    const tval = document.getElementById('tval');
-    tval.innerHTML = (!isNaN(temp) ? temp.toFixed(1) : '--') + '<span>°C</span>';
-    tval.className = 'tnum' + (temp >= 50 ? ' critico' : temp >= 38 ? ' quente' : '');
-    document.getElementById('tset').textContent = t.temp_setpoint != null ? t.temp_setpoint + '°C' : '--°C';
-    const pct = Math.min(100, Math.max(0, (temp/60)*100));
-    document.getElementById('gfill').style.width = (isNaN(pct)?0:pct) + '%';
-    const ael = document.getElementById('alarme');
-    ael.textContent = t.alarme_temp ? '🔴 ATIVO' : 'Inativo';
-    ael.style.color = t.alarme_temp ? '#f85149' : '#3fb950';
-    document.getElementById('fmodo').textContent = t.modo || '--';
-    const fi = document.getElementById('ficon');
-    const fb = document.getElementById('fbadge');
-    if (t.ventilador_ligado) { fi.classList.add('spin'); fb.textContent = 'VENTILADOR ON'; fb.className = 'fbadge'; }
-    else { fi.classList.remove('spin'); fb.textContent = 'VENTILADOR OFF'; fb.className = 'fbadge off'; }
-  }
+  // Nota: O bloco que renderizava "d.temperatura" daqui foi removido para não apagar a simulação.
 
   const el = d.eletrico;
   if (el) {
@@ -347,15 +385,15 @@ function dispararAlarmeFalha() {
     badge.className = 'badge offline';
 }
 
-// --- LÓGICA PRINCIPAL DE BUSCA ---
+// --- REQUISIÇÃO DA API (CADA 5 MINUTOS) ---
 async function atualizar() { 
   try { 
     const r = await fetch(API_URL); 
     if(r.ok) {
         const respostaAPI = await r.json();
         
-        render(respostaAPI); // Atualiza os blocos de texto
-        processarDadoIndividual(respostaAPI); // Joga o novo dado pro gráfico e salva
+        render(respostaAPI); 
+        processarDadoIndividual(respostaAPI); 
         
         ultimaAtualizacao = Date.now(); 
     } else {
