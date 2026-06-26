@@ -99,13 +99,13 @@ module.exports = async function handler(req, res) {
     const tb = parseFloat(eletrico.tensao_b);
     const tc = parseFloat(eletrico.tensao_c);
 
-    if (ta > 133) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
+    if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
     if (ta < 111 && ta > 0) alertas.push(`*Fase A:* Baixa tensão (${ta}V)`);
 
-    if (tb > 133) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
+    if (tb > 139) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
     if (tb < 111 && tb > 0) alertas.push(`*Fase B:* Baixa tensão (${tb}V)`);
 
-    if (tc > 133) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
+    if (tc > 139) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
     if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
 
     // --- CONTROLE INTELIGENTE DE FLUXO DO TELEGRAM ---
