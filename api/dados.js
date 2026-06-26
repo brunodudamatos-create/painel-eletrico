@@ -1,6 +1,6 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// PAINEL ELÉTRICO — TUYA SHADOW ENDPOINT (FINAL COM SUPABASE E TELEGRAM)
+// PAINEL ELÉTRICO — TUYA SHADOW ENDPOINT (COM CONTROLE DE ALARME INTELIGENTE)
 // ================================================================
 
 const crypto = require('crypto');
@@ -9,7 +9,7 @@ const { createClient } = require('@supabase/supabase-js');
 // Inicializa o Supabase com as variáveis da Vercel
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// FUNÇÃO DE DISPARO DO TELEGRAM (Corrigida)
+// FUNÇÃO DE DISPARO DO TELEGRAM
 async function enviarAlertaTelegram(mensagem) {
   const BOT_TOKEN = '8705676767:AAGp7WgKOJ02O7Q8P-h3NQNnsnmZjqKiahU';
   const CHAT_ID = '1213251946'; 
@@ -22,7 +22,7 @@ async function enviarAlertaTelegram(mensagem) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: mensagem, // <-- CORRIGIDO: Agora usa a variável certa
+        text: mensagem,
         parse_mode: 'Markdown'
       })
     });
@@ -93,32 +93,96 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // LÓGICA DE AVALIAÇÃO DOS ALARMES
+    // AVALIAÇÃO OPERACIONAL DOS LIMITES
     let alertas = [];
-    
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
     const tc = parseFloat(eletrico.tensao_c);
 
-    // Avaliação Fase A
     if (ta > 133) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
     if (ta < 111 && ta > 0) alertas.push(`*Fase A:* Baixa tensão (${ta}V)`);
 
-    // Avaliação Fase B
     if (tb > 133) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
     if (tb < 111 && tb > 0) alertas.push(`*Fase B:* Baixa tensão (${tb}V)`);
 
-    // Avaliação Fase C
     if (tc > 133) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
     if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
 
-    // Dispara no Telegram se houver anomalias
+    // --- CONTROLE INTELIGENTE DE FLUXO DO TELEGRAM ---
+    let deveEnviarTelegram = false;
+    let textoMensagem = '';
+
+    // Busca o estado do alarme anterior salvo no banco
+    const { data: estadoAnterior } = await supabase
+      .from('status_alarmes')
+      .select('*')
+      .eq('id', 'painel_brasileira')
+      .maybeSingle();
+
+    const agora = new Date();
+    let novoEstado = {
+      em_alerta: alertas.length > 0,
+      primeiro_alerta_at: estadoAnterior?.primeiro_alerta_at || null,
+      ultimo_alerta_at: estadoAnterior?.ultimo_alerta_at || null,
+      estagio: estadoAnterior?.estagio || 0,
+      texto_alertas: alertas.join('\n')
+    };
+
     if (alertas.length > 0) {
-      const textoFinal = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${alertas.join('\n')}`;
-      await enviarAlertaTelegram(textoFinal);
+      if (!estadoAnterior?.em_alerta) {
+        // CASO 1: Entrou em alarme pela primeira vez (Estava Normal)
+        deveEnviarTelegram = true;
+        textoMensagem = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+        novoEstado.primeiro_alerta_at = agora.toISOString();
+        novoEstado.ultimo_alerta_at = agora.toISOString();
+        novoEstado.estagio = 1; // Marca o primeiro envio realizado
+      } else {
+        // Já estava em alarme. Vamos calcular o tempo que passou
+        const primeiroAlerta = new Date(estadoAnterior.primeiro_alerta_at);
+        const ultimoAlerta = new Date(estadoAnterior.ultimo_alerta_at);
+        const diffHorasDesdePrimeiro = (agora - primeiroAlerta) / (1000 * 60 * 60);
+        const diffHorasDesdeUltimo = (agora - ultimoAlerta) / (1000 * 60 * 60);
+
+        // CASO 2: Já se passou mais de 1 hora do início e ainda não enviamos o reforço de 1h
+        if (novoEstado.estagio === 1 && diffHorasDesdePrimeiro >= 1) {
+          deveEnviarTelegram = true;
+          textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+          novoEstado.ultimo_alerta_at = agora.toISOString();
+          novoEstado.estagio = 2; // Passa para o estágio de monitoramento diário
+        } 
+        // CASO 3: Já estamos no estágio 2 e se passaram 24 horas desde o último aviso enviado
+        else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
+          deveEnviarTelegram = true;
+          textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+          novoEstado.ultimo_alerta_at = agora.toISOString();
+          // Permanece no estágio 2 para repetir a cada 24h caso o problema continue indefinidamente
+        }
+      }
+    } else {
+      // CASO 4: Não há alertas ativos agora. O sistema voltou ao normal?
+      if (estadoAnterior?.em_alerta) {
+        deveEnviarTelegram = true;
+        textoMensagem = `✅ *SISTEMA NORMALIZADO*\n_Painel: Brasileira Distribuidora_\n\nAs grandezas elétricas retornaram aos níveis operacionais normais.`;
+        novoEstado.primeiro_alerta_at = null;
+        novoEstado.ultimo_alerta_at = null;
+        novoEstado.estagio = 0; // Zera o controle
+      }
     }
 
-    // GRAVAÇÃO NO SUPABASE
+    // Salva o novo estado de controle no banco
+    if (estadoAnterior) {
+      await supabase.from('status_alarmes').update(novoEstado).eq('id', 'painel_brasileira');
+    } else {
+      await supabase.from('status_alarmes').insert([{ id: 'painel_brasileira', ...novoEstado }]);
+    }
+
+    // Se as condicionais permitiram, envia o comando de rede para o Telegram
+    if (deveEnviarTelegram) {
+      await enviarAlertaTelegram(textoMensagem);
+    }
+    // -------------------------------------------------
+
+    // GRAVAÇÃO DA HISTÓRICA DE TELEMETRIA
     const { error: dbError } = await supabase
       .from('telemetria_eletrica')
       .insert([eletrico]);
@@ -130,8 +194,8 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
-      status: 'NORMAL',
-      alertas: [],
+      status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
+      alertas,
       eletrico,
       temperatura: { temp_atual: null },
       banco_dados: "Gravação Sucesso"
