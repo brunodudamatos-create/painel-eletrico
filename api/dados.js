@@ -9,7 +9,7 @@ const { createClient } = require('@supabase/supabase-js');
 // Inicializa o Supabase com as variáveis da Vercel
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// FUNÇÃO DE DISPARO DO TELEGRAM (Dados reais inseridos)
+// FUNÇÃO DE DISPARO DO TELEGRAM (Corrigida)
 async function enviarAlertaTelegram(mensagem) {
   const BOT_TOKEN = '8705676767:AAGp7WgKOJ02O7Q8P-h3NQNnsnmZjqKiahU';
   const CHAT_ID = '1213251946'; 
@@ -22,7 +22,7 @@ async function enviarAlertaTelegram(mensagem) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: message,
+        text: mensagem, // <-- CORRIGIDO: Agora usa a variável certa
         parse_mode: 'Markdown'
       })
     });
@@ -112,7 +112,7 @@ module.exports = async function handler(req, res) {
     if (tc > 133) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
     if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
 
-    // Se houver anomalias, envia a notificação para o Telegram antes de salvar no banco
+    // Dispara no Telegram se houver anomalias
     if (alertas.length > 0) {
       const textoFinal = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${alertas.join('\n')}`;
       await enviarAlertaTelegram(textoFinal);
