@@ -1,18 +1,18 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// PAINEL ELÉTRICO — TUYA SHADOW ENDPOINT (COM CONTROLE DE ALARME INTELIGENTE)
+// PAINEL ELÉTRICO — VERSÃO AUTÔNOMA (CRON READY)
 // ================================================================
 
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
-// Inicializa o Supabase com as variáveis da Vercel
+// Inicializa o Supabase com as variáveis de ambiente da Vercel
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // FUNÇÃO DE DISPARO DO TELEGRAM
 async function enviarAlertaTelegram(mensagem) {
-  const BOT_TOKEN = '8705676767:AAGp7WgKOJ02O7Q8P-h3NQNnsnmZjqKiahU';
-  const CHAT_ID = '1213251946'; 
+  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
   
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
   
@@ -53,6 +53,7 @@ module.exports = async function handler(req, res) {
   const BASE_URL = 'https://openapi.tuyaus.com'; 
 
   try {
+    // --- 1. COLETA DE DADOS TUYA ---
     const t1 = Date.now().toString();
     const tokenRes = await fetch(`${BASE_URL}/v1.0/token?grant_type=1`, {
       headers: { client_id: CLIENT_ID, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t1, 'GET', '/v1.0/token?grant_type=1'), t: t1, sign_method: 'HMAC-SHA256' }
@@ -93,7 +94,7 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // AVALIAÇÃO OPERACIONAL DOS LIMITES
+    // --- 2. LÓGICA DE ALARMES ---
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
@@ -108,11 +109,10 @@ module.exports = async function handler(req, res) {
     if (tc > 139) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
     if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
 
-    // --- CONTROLE INTELIGENTE DE FLUXO DO TELEGRAM ---
+    // --- 3. CONTROLE DE ESTADO (SUPABASE) ---
     let deveEnviarTelegram = false;
     let textoMensagem = '';
 
-    // Busca o estado do alarme anterior salvo no banco
     const { data: estadoAnterior } = await supabase
       .from('status_alarmes')
       .select('*')
@@ -130,66 +130,56 @@ module.exports = async function handler(req, res) {
 
     if (alertas.length > 0) {
       if (!estadoAnterior?.em_alerta) {
-        // CASO 1: Entrou em alarme pela primeira vez (Estava Normal)
         deveEnviarTelegram = true;
         textoMensagem = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
         novoEstado.primeiro_alerta_at = agora.toISOString();
         novoEstado.ultimo_alerta_at = agora.toISOString();
-        novoEstado.estagio = 1; // Marca o primeiro envio realizado
+        novoEstado.estagio = 1;
       } else {
-        // Já estava em alarme. Vamos calcular o tempo que passou
         const primeiroAlerta = new Date(estadoAnterior.primeiro_alerta_at);
         const ultimoAlerta = new Date(estadoAnterior.ultimo_alerta_at);
         const diffHorasDesdePrimeiro = (agora - primeiroAlerta) / (1000 * 60 * 60);
         const diffHorasDesdeUltimo = (agora - ultimoAlerta) / (1000 * 60 * 60);
 
-        // CASO 2: Já se passou mais de 1 hora do início e ainda não enviamos o reforço de 1h
         if (novoEstado.estagio === 1 && diffHorasDesdePrimeiro >= 1) {
           deveEnviarTelegram = true;
           textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
-          novoEstado.estagio = 2; // Passa para o estágio de monitoramento diário
+          novoEstado.estagio = 2;
         } 
-        // CASO 3: Já estamos no estágio 2 e se passaram 24 horas desde o último aviso enviado
         else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
           deveEnviarTelegram = true;
           textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
-          // Permanece no estágio 2 para repetir a cada 24h caso o problema continue indefinidamente
         }
       }
     } else {
-      // CASO 4: Não há alertas ativos agora. O sistema voltou ao normal?
       if (estadoAnterior?.em_alerta) {
         deveEnviarTelegram = true;
         textoMensagem = `✅ *SISTEMA NORMALIZADO*\n_Painel: Brasileira Distribuidora_\n\nAs grandezas elétricas retornaram aos níveis operacionais normais.`;
         novoEstado.primeiro_alerta_at = null;
         novoEstado.ultimo_alerta_at = null;
-        novoEstado.estagio = 0; // Zera o controle
+        novoEstado.estagio = 0;
       }
     }
 
-    // Salva o novo estado de controle no banco
     if (estadoAnterior) {
       await supabase.from('status_alarmes').update(novoEstado).eq('id', 'painel_brasileira');
     } else {
       await supabase.from('status_alarmes').insert([{ id: 'painel_brasileira', ...novoEstado }]);
     }
 
-    // Se as condicionais permitiram, envia o comando de rede para o Telegram
     if (deveEnviarTelegram) {
       await enviarAlertaTelegram(textoMensagem);
     }
-    // -------------------------------------------------
 
-    // GRAVAÇÃO DA HISTÓRICA DE TELEMETRIA
+    // --- 4. PERSISTÊNCIA NO HISTÓRICO ---
     const { error: dbError } = await supabase
       .from('telemetria_eletrica')
       .insert([eletrico]);
 
     if (dbError) {
-      console.error("Erro ao salvar no Supabase:", dbError);
-      return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError, eletrico });
+      return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError });
     }
 
     return res.status(200).json({
@@ -197,7 +187,6 @@ module.exports = async function handler(req, res) {
       status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
       alertas,
       eletrico,
-      temperatura: { temp_atual: null },
       banco_dados: "Gravação Sucesso"
     });
 
