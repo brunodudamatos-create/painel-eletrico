@@ -184,48 +184,37 @@
 
 <script>
 const API_URL = 'https://painel-eletrico.vercel.app/api/dados'; 
+const API_HISTORICO = 'https://painel-eletrico.vercel.app/api/historico';
+const LIMITE_PONTOS = 432; // 36 horas * 12 leituras/hora
+let historico = [];
 let ultimaAtualizacao = Date.now();
 
-// --- VARIÁVEIS DA SIMULAÇÃO LOCAL DA TEMPERATURA ---
+// --- SIMULAÇÃO DE TEMPERATURA ---
 let tempSimulada = 34.8;
 let ventiladorLigado = false;
 const SETPOINT_ON = 38.0;
 const SETPOINT_OFF = 34.5;
 
-// Lógica que roda a cada 2 segundos simulando o termostato real
 function simularTermostato() {
-  if (!ventiladorLigado && tempSimulada >= SETPOINT_ON) {
-    ventiladorLigado = true;
-  } else if (ventiladorLigado && tempSimulada <= SETPOINT_OFF) {
-    ventiladorLigado = false;
-  }
+  if (!ventiladorLigado && tempSimulada >= SETPOINT_ON) ventiladorLigado = true;
+  else if (ventiladorLigado && tempSimulada <= SETPOINT_OFF) ventiladorLigado = false;
+  if (ventiladorLigado) tempSimulada -= 0.15; 
+  else tempSimulada += 0.08; 
 
-  // Se o ventilador tá ON resfria, se tá OFF o calor do painel sobe a temperatura
-  if (ventiladorLigado) {
-    tempSimulada -= 0.15; 
-  } else {
-    tempSimulada += 0.08; 
-  }
-
-  // Atualização Visual dos Elementos de Temperatura
   const tval = document.getElementById('tval');
   if (tval) {
     tval.innerHTML = tempSimulada.toFixed(1) + '<span>°C</span>';
     tval.className = 'tnum' + (tempSimulada >= 50 ? ' critico' : tempSimulada >= 38 ? ' quente' : '');
   }
-
   const pct = Math.min(100, Math.max(0, (tempSimulada / 60) * 100));
-  if (document.getElementById('gfill')) {
-    document.getElementById('gfill').style.width = pct + '%';
-  }
-
+  if (document.getElementById('gfill')) document.getElementById('gfill').style.width = pct + '%';
+  
   const ael = document.getElementById('alarme');
   if (ael) {
-    let alarmeCritico = tempSimulada >= 43.0; // Alerta crítico visual se passar de 43°C
+    let alarmeCritico = tempSimulada >= 43.0; 
     ael.textContent = alarmeCritico ? '🔴 ATIVO' : 'Inativo';
     ael.style.color = alarmeCritico ? '#f85149' : '#3fb950';
   }
-
   const fi = document.getElementById('ficon');
   const fb = document.getElementById('fbadge');
   if (fi && fb) {
@@ -240,12 +229,9 @@ function simularTermostato() {
     }
   }
 }
-
-// Inicializa a simulação da temperatura rodando de 2 em 2 segundos
 setInterval(simularTermostato, 2000);
 
-
-// --- INICIALIZAÇÃO DOS GRÁFICOS (EIXO ELÉTRICO) ---
+// --- GRÁFICOS ---
 const ctx = document.getElementById('tensaoChart').getContext('2d');
 const chart = new Chart(ctx, {
     type: 'line',
@@ -269,8 +255,6 @@ const chartCorrente = new Chart(ctxCorrente, {
 });
 
 function renderizarGraficos(dadosParaGrafico) {
-  if (dadosParaGrafico.length > 288) dadosParaGrafico = dadosParaGrafico.slice(-288);
-
   chart.data.labels = dadosParaGrafico.map(p => p.hora);
   chart.data.datasets[0].data = dadosParaGrafico.map(p => p.va);
   chart.data.datasets[1].data = dadosParaGrafico.map(p => p.vb);
@@ -285,15 +269,23 @@ function renderizarGraficos(dadosParaGrafico) {
   chartCorrente.update();
 }
 
-// Carrega histórico salvo na memória local para o gráfico não resetar ao atualizar a página
-let historico = [];
-try {
-  const salvo = localStorage.getItem('painel_frutas_historico');
-  if (salvo) {
-      historico = JSON.parse(salvo);
-      renderizarGraficos(historico);
-  }
-} catch(e) {}
+// --- BUSCA HISTÓRICO NO SERVIDOR ---
+async function carregarHistoricoDoBanco() {
+  try {
+    const r = await fetch(API_HISTORICO);
+    if (!r.ok) throw new Error('Erro ao buscar histórico');
+    const data = await r.json();
+    
+    // Inverte para ficar cronológico e mapeia
+    historico = data.reverse().map(item => ({
+      hora: new Date(item.created_at || item.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'}),
+      va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
+      ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
+    }));
+    
+    renderizarGraficos(historico);
+  } catch(e) { console.error("Falha ao carregar histórico:", e); }
+}
 
 function processarDadoIndividual(registro) {
   const el = registro.eletrico;
@@ -311,14 +303,10 @@ function processarDadoIndividual(registro) {
   } else {
     historico.push(novoPonto);
   }
-
-  if (historico.length > 288) historico.shift();
-  localStorage.setItem('painel_frutas_historico', JSON.stringify(historico));
-
+  if (historico.length > LIMITE_PONTOS) historico.shift();
   renderizarGraficos(historico);
 }
 
-// --- CONFIGURAÇÃO DOS TEXTOS ELÉTRICOS ---
 function set(id, val, dec, unit) {
   const el = document.getElementById(id);
   if (!el || val === null || val === undefined) return;
@@ -329,16 +317,12 @@ function set(id, val, dec, unit) {
 
 function render(d) {
   document.getElementById('ts').textContent = "Atualizado: " + new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'});
-
   const badge = document.getElementById('badge');
   badge.textContent = d.status === 'ALERTA' ? '🟡 ALERTA' : '🟢 NORMAL';
   badge.className = 'badge' + (d.status === 'ALERTA' ? ' alerta' : '');
-  
   const abox = document.getElementById('abox');
   abox.classList.remove('falha-rede');
   document.getElementById('atitle').textContent = '⚠️ Alertas Ativos';
-
-  // Nota: O bloco que renderizava "d.temperatura" daqui foi removido para não apagar a simulação.
 
   const el = d.eletrico;
   if (el) {
@@ -362,7 +346,6 @@ function render(d) {
         if (f.v > 133) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 133 V`);
         else if (f.v < 111 && f.v > 0) alertas.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
     });
-
     if(alertas.length > 0) { 
         abox.classList.add('show'); 
         document.getElementById('alist').innerHTML = alertas.map(a => `<div class="ai">${a}</div>`).join(''); 
@@ -379,36 +362,35 @@ function dispararAlarmeFalha() {
     abox.classList.add('show', 'falha-rede');
     document.getElementById('atitle').textContent = '⚠️ ERRO DE SISTEMA';
     document.getElementById('alist').innerHTML = '<div class="ai" style="color:#f85149; font-weight:bold;">🚨 OFFLINE: Falha na rede, Vercel ou equipamento parou.</div>';
-    
     const badge = document.getElementById('badge');
     badge.textContent = '🔴 OFFLINE';
     badge.className = 'badge offline';
 }
 
-// --- REQUISIÇÃO DA API (CADA 5 MINUTOS) ---
 async function atualizar() { 
   try { 
     const r = await fetch(API_URL); 
     if(r.ok) {
         const respostaAPI = await r.json();
-        
         render(respostaAPI); 
         processarDadoIndividual(respostaAPI); 
-        
         ultimaAtualizacao = Date.now(); 
-    } else {
-        throw new Error('API não respondeu com sucesso');
-    }
+    } else throw new Error('API não respondeu com sucesso');
   } catch(e) { 
     console.log('Falha na comunicação:', e); 
-    if (Date.now() - ultimaAtualizacao > 660000) {
-        dispararAlarmeFalha();
-    }
+    if (Date.now() - ultimaAtualizacao > 660000) dispararAlarmeFalha();
   } 
 }
 
+// INICIALIZAÇÃO
+carregarHistoricoDoBanco();
 atualizar();
 setInterval(atualizar, 300000);
+
+// Recarrega se o usuário voltar para a aba
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") carregarHistoricoDoBanco();
+});
 </script>
 </body>
 </html>
