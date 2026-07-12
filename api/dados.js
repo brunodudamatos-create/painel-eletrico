@@ -1,19 +1,11 @@
-// ================================================================
-// VERCEL SERVERLESS FUNCTION — api/dados.js
-// PAINEL ELÉTRICO — VERSÃO AUTÔNOMA (CRON READY)
-// ================================================================
-
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
-// Inicializa o Supabase com as variáveis de ambiente da Vercel
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// FUNÇÃO DE DISPARO DO TELEGRAM
 async function enviarAlertaTelegram(mensagem) {
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-  
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
   
   try {
@@ -22,7 +14,7 @@ async function enviarAlertaTelegram(mensagem) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: mensagem,
+        text: mensagem, // Corrigido de 'message' para 'mensagem'
         parse_mode: 'Markdown'
       })
     });
@@ -50,11 +42,11 @@ module.exports = async function handler(req, res) {
   const CLIENT_ID = process.env.TUYA_CLIENT_ID;
   const CLIENT_SECRET = process.env.TUYA_CLIENT_SECRET;
   const DEVICE_ID_MEDIDOR = process.env.TUYA_DEVICE_MEDIDOR;
-  const DEVICE_ID_TERMOSTATO = process.env.TUYA_DEVICE_TERMOSTATO; // ID do Termostato configurado na Vercel
-  const BASE_URL = 'https://openapi.tuyaus.com'; 
+  const DEVICE_ID_TERMOSTATO = process.env.TUYA_DEVICE_TERMOSTATO;
+  const BASE_URL = 'https://openapi.tuyaus.com';
 
   try {
-    // --- 1. AUTENTICAÇÃO NA TUYA (OBTER TOKEN) ---
+    // 1. AUTENTICAÇÃO NA TUYA
     const t1 = Date.now().toString();
     const tokenRes = await fetch(`${BASE_URL}/v1.0/token?grant_type=1`, {
       headers: { client_id: CLIENT_ID, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t1, 'GET', '/v1.0/token?grant_type=1'), t: t1, sign_method: 'HMAC-SHA256' }
@@ -62,7 +54,7 @@ module.exports = async function handler(req, res) {
     const tokenData = await tokenRes.json();
     const token = tokenData.result?.access_token;
 
-    // --- 2. COLETA DE DADOS DO MEDIDOR ELÉTRICO (100% INTACTO) ---
+    // 2. COLETA DE DADOS DO MEDIDOR ELÉTRICO
     const t2 = Date.now().toString();
     const urlShadow = `/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`;
     const resShadow = await fetch(`${BASE_URL}${urlShadow}`, {
@@ -71,34 +63,44 @@ module.exports = async function handler(req, res) {
     const dataShadow = await resShadow.json();
     const props = dataShadow.result?.properties || [];
 
+    const fpa = dpShadow(props, 'power_factor_a') != null ? (dpShadow(props, 'power_factor_a') / 100).toFixed(2) : null;
+    const fpb = dpShadow(props, 'power_factor_b') != null ? (dpShadow(props, 'power_factor_b') / 100).toFixed(2) : null;
+    const fpc = dpShadow(props, 'power_factor_c') != null ? (dpShadow(props, 'power_factor_c') / 100).toFixed(2) : null;
+    
+    // Cálculo do Fator de Potência Médio
+    const fpaNum = parseFloat(fpa || 0);
+    const fpbNum = parseFloat(fpb || 0);
+    const fpcNum = parseFloat(fpc || 0);
+    const fat_pot_medio = ((fpaNum + fpbNum + fpcNum) / 3).toFixed(2);
+
     const eletrico = {
       tensao_a: dpShadow(props, 'voltage_a') != null ? (dpShadow(props, 'voltage_a') / 10).toFixed(1) : null,
       corrente_a: dpShadow(props, 'current_a') != null ? (dpShadow(props, 'current_a') / 1000).toFixed(2) : null,
       potencia_a: dpShadow(props, 'active_power_a'),
-      fat_pot_a: dpShadow(props, 'power_factor_a') != null ? (dpShadow(props, 'power_factor_a') / 100).toFixed(2) : null,
+      fat_pot_a: fpa,
       energia_a: dpShadow(props, 'forward_energy_a'),
 
       tensao_b: dpShadow(props, 'voltage_b') != null ? (dpShadow(props, 'voltage_b') / 10).toFixed(1) : null,
       corrente_b: dpShadow(props, 'current_b') != null ? (dpShadow(props, 'current_b') / 1000).toFixed(2) : null,
       potencia_b: dpShadow(props, 'active_power_b'),
-      fat_pot_b: dpShadow(props, 'power_factor_b') != null ? (dpShadow(props, 'power_factor_b') / 100).toFixed(2) : null,
+      fat_pot_b: fpb,
       energia_b: dpShadow(props, 'forward_energy_b'),
 
       tensao_c: dpShadow(props, 'voltage_c') != null ? (dpShadow(props, 'voltage_c') / 10).toFixed(1) : null,
       corrente_c: dpShadow(props, 'current_c') != null ? (dpShadow(props, 'current_c') / 1000).toFixed(2) : null,
       potencia_c: dpShadow(props, 'active_power_c'),
-      fat_pot_c: dpShadow(props, 'power_factor_c') != null ? (dpShadow(props, 'power_factor_c') / 100).toFixed(2) : null,
+      fat_pot_c: fpc,
       energia_c: dpShadow(props, 'forward_energy_c'),
 
       energia_total: dpShadow(props, 'forward_energy_total'),
       potencia_total: dpShadow(props, 'active_power_total'),
       frequencia: dpShadow(props, 'frequency'),
-      falha: dpShadow(props, 'fault')
+      falha: dpShadow(props, 'fault'),
+      fat_pot_medio: fat_pot_medio
     };
 
-    // --- 3. COLETA DE DADOS DO TERMOSTATO (CORRIGIDO E ROBUSTO) ---
-    let temperatura = { temp_atual: null, temp_set: null, raw: [] };
-    
+    // 3. COLETA DE DADOS DO TERMOSTATO
+    let termostato = { temp_current: null, temp_set: null, raw: [] };
     if (DEVICE_ID_TERMOSTATO) {
       const t3 = Date.now().toString();
       const urlShadowTermo = `/v2.0/cloud/thing/${DEVICE_ID_TERMOSTATO}/shadow/properties`;
@@ -108,35 +110,28 @@ module.exports = async function handler(req, res) {
       const dataShadowTermo = await resShadowTermo.json();
       const propsTermo = dataShadowTermo.result?.properties || [];
       
-      const valAtual = dpShadow(propsTermo, 'temp_current') ?? dpShadow(propsTermo, 'temp_atual') ?? dpShadow(propsTermo, 'celsius') ?? dpShadow(propsTermo, 'va_temperature');
-      const valSet = dpShadow(propsTermo, 'temp_set') ?? dpShadow(propsTermo, 'set_temp') ?? dpShadow(propsTermo, 'target_temperature');
-      
-      temperatura = {
-        temp_atual: valAtual != null ? (typeof valAtual === 'number' && valAtual > 100 ? (valAtual / 10).toFixed(1) : parseFloat(valAtual).toFixed(1)) : null,
-        temp_set: valSet != null ? (typeof valSet === 'number' && valSet > 100 ? (valSet / 10).toFixed(1) : parseFloat(valSet).toFixed(1)) : null,
+      termostato = {
+        temp_current: dpShadow(propsTermo, 'temp_current') != null ? (dpShadow(propsTermo, 'temp_current') / 10).toFixed(1) : null,
+        temp_set: dpShadow(propsTermo, 'temp_set') != null ? (dpShadow(propsTermo, 'temp_set') / 10).toFixed(1) : null,
         raw: propsTermo
       };
     }
 
-    // --- 4. LÓGICA DE ALARMES ---
+    // 4. LÓGICA DE ALARMES
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
     const tc = parseFloat(eletrico.tensao_c);
-
     if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
     if (ta < 111 && ta > 0) alertas.push(`*Fase A:* Baixa tensão (${ta}V)`);
-
     if (tb > 139) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
     if (tb < 111 && tb > 0) alertas.push(`*Fase B:* Baixa tensão (${tb}V)`);
-
     if (tc > 139) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
     if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
 
-    // --- 5. CONTROLE DE ESTADO (SUPABASE) ---
+    // 5. CONTROLE DE ESTADO (SUPABASE)
     let deveEnviarTelegram = false;
     let textoMensagem = '';
-
     const { data: estadoAnterior } = await supabase
       .from('status_alarmes')
       .select('*')
@@ -164,14 +159,12 @@ module.exports = async function handler(req, res) {
         const ultimoAlerta = new Date(estadoAnterior.ultimo_alerta_at);
         const diffHorasDesdePrimeiro = (agora - primeiroAlerta) / (1000 * 60 * 60);
         const diffHorasDesdeUltimo = (agora - ultimoAlerta) / (1000 * 60 * 60);
-
         if (novoEstado.estagio === 1 && diffHorasDesdePrimeiro >= 1) {
           deveEnviarTelegram = true;
           textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
           novoEstado.estagio = 2;
-        } 
-        else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
+        } else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
           deveEnviarTelegram = true;
           textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
@@ -197,25 +190,24 @@ module.exports = async function handler(req, res) {
       await enviarAlertaTelegram(textoMensagem);
     }
 
-    // --- 6. PERSISTÊNCIA NO HISTÓRICO (APENAS ELÉTRICO) ---
-    const { error: dbError } = await supabase
-      .from('telemetria_eletrica')
-      .insert([eletrico]);
-
+    // 6. PERSISTÊNCIA NO HISTÓRICO
+    const { error: dbError } = await supabase.from('telemetria_eletrica').insert([eletrico]);
     if (dbError) {
       return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError });
     }
 
-    // --- 7. RETORNO DA API PARA O INDEX.HTML ---
+    // 7. RETORNO COMPATÍVEL COM O FRONT-END
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
       status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
       alertas,
       eletrico,
-      temperatura, // Chave correta para o index.html bater com d.temperatura
+      temperatura: {  // Padronizado para casar com a leitura do index.html
+        temp_atual: termostato.temp_current,
+        temp_set: termostato.temp_set
+      },
       banco_dados: "Gravação Sucesso"
     });
-
   } catch (err) {
     return res.status(500).json({ erro: err.message });
   }
