@@ -22,7 +22,7 @@ async function enviarAlertaTelegram(mensagem) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: message,
+        text: mensagem,
         parse_mode: 'Markdown'
       })
     });
@@ -62,7 +62,7 @@ module.exports = async function handler(req, res) {
     const tokenData = await tokenRes.json();
     const token = tokenData.result?.access_token;
 
-    // --- 2. COLETA DE DADOS DO MEDIDOR ELÉTRICO ---
+    // --- 2. COLETA DE DADOS DO MEDIDOR ELÉTRICO (100% INTACTO) ---
     const t2 = Date.now().toString();
     const urlShadow = `/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`;
     const resShadow = await fetch(`${BASE_URL}${urlShadow}`, {
@@ -75,7 +75,7 @@ module.exports = async function handler(req, res) {
       tensao_a: dpShadow(props, 'voltage_a') != null ? (dpShadow(props, 'voltage_a') / 10).toFixed(1) : null,
       corrente_a: dpShadow(props, 'current_a') != null ? (dpShadow(props, 'current_a') / 1000).toFixed(2) : null,
       potencia_a: dpShadow(props, 'active_power_a'),
-      fat_pot_a: dpShadow(props, 'power_factor_a') != null ? (dpShadow(props, 'power_factor_a / 100)).toFixed(2) : null,
+      fat_pot_a: dpShadow(props, 'power_factor_a') != null ? (dpShadow(props, 'power_factor_a') / 100).toFixed(2) : null,
       energia_a: dpShadow(props, 'forward_energy_a'),
 
       tensao_b: dpShadow(props, 'voltage_b') != null ? (dpShadow(props, 'voltage_b') / 10).toFixed(1) : null,
@@ -96,8 +96,8 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // --- 3. COLETA DE DADOS DO TERMOSTATO (NOVO) ---
-    let termostato = { temp_current: null, temp_set: null, raw: [] };
+    // --- 3. COLETA DE DADOS DO TERMOSTATO (CORRIGIDO E ROBUSTO) ---
+    let temperatura = { temp_atual: null, temp_set: null, raw: [] };
     
     if (DEVICE_ID_TERMOSTATO) {
       const t3 = Date.now().toString();
@@ -108,11 +108,13 @@ module.exports = async function handler(req, res) {
       const dataShadowTermo = await resShadowTermo.json();
       const propsTermo = dataShadowTermo.result?.properties || [];
       
-      // Mapeia os dados conforme o padrão Tuya (divide por 10 se o dispositivo enviar inteiro ex: 255 = 25.5°C)
-      termostato = {
-        temp_current: dpShadow(propsTermo, 'temp_current') != null ? (dpShadow(propsTermo, 'temp_current') / 10).toFixed(1) : null,
-        temp_set: dpShadow(propsTermo, 'temp_set') != null ? (dpShadow(propsTermo, 'temp_set') / 10).toFixed(1) : null,
-        raw: propsTermo // Mantém o bruto caso precise debugar outros parâmetros
+      const valAtual = dpShadow(propsTermo, 'temp_current') ?? dpShadow(propsTermo, 'temp_atual') ?? dpShadow(propsTermo, 'celsius') ?? dpShadow(propsTermo, 'va_temperature');
+      const valSet = dpShadow(propsTermo, 'temp_set') ?? dpShadow(propsTermo, 'set_temp') ?? dpShadow(propsTermo, 'target_temperature');
+      
+      temperatura = {
+        temp_atual: valAtual != null ? (typeof valAtual === 'number' && valAtual > 100 ? (valAtual / 10).toFixed(1) : parseFloat(valAtual).toFixed(1)) : null,
+        temp_set: valSet != null ? (typeof valSet === 'number' && valSet > 100 ? (valSet / 10).toFixed(1) : parseFloat(valSet).toFixed(1)) : null,
+        raw: propsTermo
       };
     }
 
@@ -210,7 +212,7 @@ module.exports = async function handler(req, res) {
       status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
       alertas,
       eletrico,
-      termostato, // <--- O index.html vai pegar os dados REAIS aqui agora!
+      temperatura, // Chave correta para o index.html bater com d.temperatura
       banco_dados: "Gravação Sucesso"
     });
 
