@@ -203,18 +203,21 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError });
     }
 
-    // --- 7. RETORNO DA API COMPATÍVEL COM O INDEX.HTML ---
-    return res.status(200).json({
-      timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
-      status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
-      alertas,
-      eletrico,
-      temperatura: {
-        temp_atual: temp_atual,
-        raw_props: propsTermo // Facilita inspecionar no browser se necessário
-      },
-      banco_dados: "Gravação Sucesso"
-    });
+  // Dentro da sua função na api/dados.js, ao obter as propriedades do termostato:
+const propsTermo = dataShadowTermo.result?.properties || [];
+
+// No retorno res.json() da api/dados.js:
+return res.status(200).json({
+  timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
+  status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
+  alertas,
+  eletrico,
+  temperatura: {
+    temp_atual: dpShadow(propsTermo, 'temp_current'), // ou o campo que estiver testando
+    raw_tuya: propsTermo // <--- ISSO VAI MOSTRAR OS CÓDIGOS REAIS DA TUYA
+  },
+  banco_dados: "Gravação Sucesso"
+});
 
   } catch (err) {
     return res.status(500).json({ erro: err.message });
