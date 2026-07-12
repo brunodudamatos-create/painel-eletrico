@@ -281,27 +281,26 @@ function render(d) {
   abox.classList.remove('falha-rede');
   document.getElementById('atitle').textContent = '⚠️ Alertas Ativos';
 
-  // --- LEITURA REAL DO TERMOSTATO (API) ---
+  // --- APENAS LEITURA DA TEMPERATURA ---
   const term = d.termostato;
   if (term) {
     const tvalEl = document.getElementById('tval');
     const gfillEl = document.getElementById('gfill');
     const ael = document.getElementById('alarme');
-    const fi = document.getElementById('ficon');
-    const fb = document.getElementById('fbadge');
-
-    if (term.temp_current !== null && term.temp_current !== undefined) {
+    if (term.temp_current !== undefined && term.temp_current !== null) {
       const temp = parseFloat(term.temp_current);
       tvalEl.innerHTML = temp.toFixed(1) + '<span>°C</span>';
-      tvalEl.className = 'tnum' + (temp >= 50 ? ' critico' : temp >= 38 ? ' quente' : '');
-      const pct = Math.min(100, Math.max(0, (temp / 60) * 100));
-      if (gfillEl) gfillEl.style.width = pct + '%';
-      
-      let alarmeCritico = temp >= 43.0;
-      if (ael) {
-        ael.textContent = alarmeCritico ? '🔴 ATIVO' : 'Inativo';
-        ael.style.color = alarmeCritico ? '#f85149' : '#3fb950';
-      }
+      gfillEl.style.width = Math.min(100, (temp / 60) * 100) + '%';
+      ael.textContent = 'Conectado';
+      ael.style.color = '#3fb950';
+    } else {
+      tvalEl.innerHTML = '--<span>°C</span>';
+      gfillEl.style.width = '0%';
+      ael.textContent = 'Sem Leitura (null)';
+      ael.style.color = '#8b949e';
+    }
+    document.getElementById('tset').textContent = term.temp_set ? `${term.temp_set}°C (Set)` : '--';
+  }
 
       // Se houver lógica de acionamento do ventilador por temperatura
       let ventiladorLigado = temp >= 38.0;
