@@ -1,6 +1,6 @@
 // ================================================================
 // VERCEL SERVERLESS FUNCTION — api/dados.js
-// PAINEL ELÉTRICO — VERSÃO AUTÔNOMA (CRON READY + CORREÇÃO TERMOSTATO)
+// PAINEL ELÉTRICO — VERSÃO AUTÔNOMA (CRON READY)
 // ================================================================
 
 const crypto = require('crypto');
@@ -21,7 +21,7 @@ async function enviarAlertaTelegram(mensagem) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: mensagem,
+        text: mensagem, // Corrigido de message para mensagem
         parse_mode: 'Markdown'
       })
     });
@@ -95,10 +95,8 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // --- 3. COLETA DE DADOS DO TERMOSTATO (CORRIGIDO PARA O INDEX.HTML) ---
-    let temp_atual = null;
-    let propsTermo = [];
-    
+    // --- 3. COLETA DE DADOS DO TERMOSTATO ---
+    let temperatura = { temp_atual: null, raw_tuya: [] };
     if (DEVICE_ID_TERMOSTATO) {
       const t3 = Date.now().toString();
       const urlShadowTermo = `/v2.0/cloud/thing/${DEVICE_ID_TERMOSTATO}/shadow/properties`;
@@ -106,18 +104,16 @@ module.exports = async function handler(req, res) {
         headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlShadowTermo, token), t: t3, sign_method: 'HMAC-SHA256' }
       });
       const dataShadowTermo = await resShadowTermo.json();
-      propsTermo = dataShadowTermo.result?.properties || [];
+      const propsTermo = dataShadowTermo.result?.properties || [];
+      
+      let valTemp = dpShadow(propsTermo, 'temp_current');
+      if (valTemp == null) valTemp = dpShadow(propsTermo, 'temperature');
+      if (valTemp == null) valTemp = dpShadow(propsTermo, 'cur_temperature');
 
-      // Procura em múltiplos nomes comuns de códigos Tuya para temperatura
-      const rawTemp = dpShadow(propsTermo, 'temp_current') ?? 
-                      dpShadow(propsTermo, 'current_temperature') ?? 
-                      dpShadow(propsTermo, 'temp') ?? 
-                      dpShadow(propsTermo, 'temperature');
-
-      if (rawTemp != null) {
-        // Divide por 10 se o valor for inteiro escalado (ex: 255 -> 25.5)
-        temp_atual = rawTemp > 100 ? (rawTemp / 10).toFixed(1) : parseFloat(rawTemp).toFixed(1);
-      }
+      temperatura = {
+        temp_atual: valTemp != null ? (valTemp > 100 ? valTemp / 10 : valTemp).toFixed(1) : valTemp,
+        raw_tuya: propsTermo
+      };
     }
 
     // --- 4. LÓGICA DE ALARMES ---
@@ -167,8 +163,7 @@ module.exports = async function handler(req, res) {
           textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
           novoEstado.estagio = 2;
-        } 
-        else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
+        } else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
           deveEnviarTelegram = true;
           textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
@@ -198,27 +193,19 @@ module.exports = async function handler(req, res) {
     const { error: dbError } = await supabase
       .from('telemetria_eletrica')
       .insert([eletrico]);
-
     if (dbError) {
       return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError });
     }
 
-  // Dentro da sua função na api/dados.js, ao obter as propriedades do termostato:
-const propsTermo = dataShadowTermo.result?.properties || [];
-
-// No retorno res.json() da api/dados.js:
-return res.status(200).json({
-  timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
-  status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
-  alertas,
-  eletrico,
-  temperatura: {
-    temp_atual: dpShadow(propsTermo, 'temp_current'), // ou o campo que estiver testando
-    raw_tuya: propsTermo // <--- ISSO VAI MOSTRAR OS CÓDIGOS REAIS DA TUYA
-  },
-  banco_dados: "Gravação Sucesso"
-});
-
+    // --- 7. RETORNO DA API ---
+    return res.status(200).json({
+      timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
+      status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
+      alertas,
+      eletrico,
+      temperatura,
+      banco_dados: "Gravação Sucesso"
+    });
   } catch (err) {
     return res.status(500).json({ erro: err.message });
   }
