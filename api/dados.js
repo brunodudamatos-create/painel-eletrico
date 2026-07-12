@@ -1,8 +1,15 @@
+// ================================================================
+// VERCEL SERVERLESS FUNCTION — api/dados.js
+// PAINEL ELÉTRICO — VERSÃO AUTÔNOMA (CRON READY + CORREÇÃO TERMOSTATO)
+// ================================================================
+
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
+// Inicializa o Supabase com as variáveis de ambiente da Vercel
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// FUNÇÃO DE DISPARO DO TELEGRAM
 async function enviarAlertaTelegram(mensagem) {
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -14,7 +21,7 @@ async function enviarAlertaTelegram(mensagem) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: CHAT_ID,
-        text: mensagem, // Corrigido de 'message' para 'mensagem'
+        text: mensagem,
         parse_mode: 'Markdown'
       })
     });
@@ -46,7 +53,7 @@ module.exports = async function handler(req, res) {
   const BASE_URL = 'https://openapi.tuyaus.com';
 
   try {
-    // 1. AUTENTICAÇÃO NA TUYA
+    // --- 1. AUTENTICAÇÃO NA TUYA (OBTER TOKEN) ---
     const t1 = Date.now().toString();
     const tokenRes = await fetch(`${BASE_URL}/v1.0/token?grant_type=1`, {
       headers: { client_id: CLIENT_ID, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t1, 'GET', '/v1.0/token?grant_type=1'), t: t1, sign_method: 'HMAC-SHA256' }
@@ -54,7 +61,7 @@ module.exports = async function handler(req, res) {
     const tokenData = await tokenRes.json();
     const token = tokenData.result?.access_token;
 
-    // 2. COLETA DE DADOS DO MEDIDOR ELÉTRICO
+    // --- 2. COLETA DE DADOS DO MEDIDOR ELÉTRICO ---
     const t2 = Date.now().toString();
     const urlShadow = `/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`;
     const resShadow = await fetch(`${BASE_URL}${urlShadow}`, {
@@ -63,44 +70,35 @@ module.exports = async function handler(req, res) {
     const dataShadow = await resShadow.json();
     const props = dataShadow.result?.properties || [];
 
-    const fpa = dpShadow(props, 'power_factor_a') != null ? (dpShadow(props, 'power_factor_a') / 100).toFixed(2) : null;
-    const fpb = dpShadow(props, 'power_factor_b') != null ? (dpShadow(props, 'power_factor_b') / 100).toFixed(2) : null;
-    const fpc = dpShadow(props, 'power_factor_c') != null ? (dpShadow(props, 'power_factor_c') / 100).toFixed(2) : null;
-    
-    // Cálculo do Fator de Potência Médio
-    const fpaNum = parseFloat(fpa || 0);
-    const fpbNum = parseFloat(fpb || 0);
-    const fpcNum = parseFloat(fpc || 0);
-    const fat_pot_medio = ((fpaNum + fpbNum + fpcNum) / 3).toFixed(2);
-
     const eletrico = {
       tensao_a: dpShadow(props, 'voltage_a') != null ? (dpShadow(props, 'voltage_a') / 10).toFixed(1) : null,
       corrente_a: dpShadow(props, 'current_a') != null ? (dpShadow(props, 'current_a') / 1000).toFixed(2) : null,
       potencia_a: dpShadow(props, 'active_power_a'),
-      fat_pot_a: fpa,
+      fat_pot_a: dpShadow(props, 'power_factor_a') != null ? (dpShadow(props, 'power_factor_a') / 100).toFixed(2) : null,
       energia_a: dpShadow(props, 'forward_energy_a'),
 
       tensao_b: dpShadow(props, 'voltage_b') != null ? (dpShadow(props, 'voltage_b') / 10).toFixed(1) : null,
       corrente_b: dpShadow(props, 'current_b') != null ? (dpShadow(props, 'current_b') / 1000).toFixed(2) : null,
       potencia_b: dpShadow(props, 'active_power_b'),
-      fat_pot_b: fpb,
+      fat_pot_b: dpShadow(props, 'power_factor_b') != null ? (dpShadow(props, 'power_factor_b') / 100).toFixed(2) : null,
       energia_b: dpShadow(props, 'forward_energy_b'),
 
       tensao_c: dpShadow(props, 'voltage_c') != null ? (dpShadow(props, 'voltage_c') / 10).toFixed(1) : null,
       corrente_c: dpShadow(props, 'current_c') != null ? (dpShadow(props, 'current_c') / 1000).toFixed(2) : null,
       potencia_c: dpShadow(props, 'active_power_c'),
-      fat_pot_c: fpc,
+      fat_pot_c: dpShadow(props, 'power_factor_c') != null ? (dpShadow(props, 'power_factor_c') / 100).toFixed(2) : null,
       energia_c: dpShadow(props, 'forward_energy_c'),
 
       energia_total: dpShadow(props, 'forward_energy_total'),
       potencia_total: dpShadow(props, 'active_power_total'),
       frequencia: dpShadow(props, 'frequency'),
-      falha: dpShadow(props, 'fault'),
-      fat_pot_medio: fat_pot_medio
+      falha: dpShadow(props, 'fault')
     };
 
-    // 3. COLETA DE DADOS DO TERMOSTATO
-    let termostato = { temp_current: null, temp_set: null, raw: [] };
+    // --- 3. COLETA DE DADOS DO TERMOSTATO (CORRIGIDO PARA O INDEX.HTML) ---
+    let temp_atual = null;
+    let propsTermo = [];
+    
     if (DEVICE_ID_TERMOSTATO) {
       const t3 = Date.now().toString();
       const urlShadowTermo = `/v2.0/cloud/thing/${DEVICE_ID_TERMOSTATO}/shadow/properties`;
@@ -108,16 +106,21 @@ module.exports = async function handler(req, res) {
         headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlShadowTermo, token), t: t3, sign_method: 'HMAC-SHA256' }
       });
       const dataShadowTermo = await resShadowTermo.json();
-      const propsTermo = dataShadowTermo.result?.properties || [];
-      
-      termostato = {
-        temp_current: dpShadow(propsTermo, 'temp_current') != null ? (dpShadow(propsTermo, 'temp_current') / 10).toFixed(1) : null,
-        temp_set: dpShadow(propsTermo, 'temp_set') != null ? (dpShadow(propsTermo, 'temp_set') / 10).toFixed(1) : null,
-        raw: propsTermo
-      };
+      propsTermo = dataShadowTermo.result?.properties || [];
+
+      // Procura em múltiplos nomes comuns de códigos Tuya para temperatura
+      const rawTemp = dpShadow(propsTermo, 'temp_current') ?? 
+                      dpShadow(propsTermo, 'current_temperature') ?? 
+                      dpShadow(propsTermo, 'temp') ?? 
+                      dpShadow(propsTermo, 'temperature');
+
+      if (rawTemp != null) {
+        // Divide por 10 se o valor for inteiro escalado (ex: 255 -> 25.5)
+        temp_atual = rawTemp > 100 ? (rawTemp / 10).toFixed(1) : parseFloat(rawTemp).toFixed(1);
+      }
     }
 
-    // 4. LÓGICA DE ALARMES
+    // --- 4. LÓGICA DE ALARMES ---
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
@@ -129,7 +132,7 @@ module.exports = async function handler(req, res) {
     if (tc > 139) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
     if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
 
-    // 5. CONTROLE DE ESTADO (SUPABASE)
+    // --- 5. CONTROLE DE ESTADO (SUPABASE) ---
     let deveEnviarTelegram = false;
     let textoMensagem = '';
     const { data: estadoAnterior } = await supabase
@@ -164,7 +167,8 @@ module.exports = async function handler(req, res) {
           textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
           novoEstado.estagio = 2;
-        } else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
+        } 
+        else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
           deveEnviarTelegram = true;
           textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
           novoEstado.ultimo_alerta_at = agora.toISOString();
@@ -190,24 +194,28 @@ module.exports = async function handler(req, res) {
       await enviarAlertaTelegram(textoMensagem);
     }
 
-    // 6. PERSISTÊNCIA NO HISTÓRICO
-    const { error: dbError } = await supabase.from('telemetria_eletrica').insert([eletrico]);
+    // --- 6. PERSISTÊNCIA NO HISTÓRICO (APENAS ELÉTRICO) ---
+    const { error: dbError } = await supabase
+      .from('telemetria_eletrica')
+      .insert([eletrico]);
+
     if (dbError) {
       return res.status(500).json({ erro: "Falha na gravação do BD", detalhes: dbError });
     }
 
-    // 7. RETORNO COMPATÍVEL COM O FRONT-END
+    // --- 7. RETORNO DA API COMPATÍVEL COM O INDEX.HTML ---
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
       status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
       alertas,
       eletrico,
-      temperatura: {  // Padronizado para casar com a leitura do index.html
-        temp_atual: termostato.temp_current,
-        temp_set: termostato.temp_set
+      temperatura: {
+        temp_atual: temp_atual,
+        raw_props: propsTermo // Facilita inspecionar no browser se necessário
       },
       banco_dados: "Gravação Sucesso"
     });
+
   } catch (err) {
     return res.status(500).json({ erro: err.message });
   }
