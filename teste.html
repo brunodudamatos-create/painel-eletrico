@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validação Isolada — Tuya API</title>
+    <style>
+        body { font-family: sans-serif; background: #121214; color: #e1e1e6; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: #202024; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #323238; }
+        h1, h2 { color: #04d361; }
+        button { background: #04d361; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; }
+        button:hover { background: #029343; }
+        pre { background: #121214; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 14px; color: #a8a8b3; border: 1px solid #29292e; }
+        .status { font-weight: bold; color: #ffbb00; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Painel de Validação Tuya (Ambiente Isolado)</h1>
+        <p>Esta página realiza testes sem salvar dados no Supabase ou enviar alertas.</p>
+        
+        <button onclick="buscarDadosDeTeste()">Disparar Coleta de Teste</button>
+        <p>Status do último teste: <span id="status-busca" class="status">Aguardando comando...</span></p>
+
+        <div class="card">
+            <h2>1. Dados Brutos do Termostato da Câmara</h2>
+            <p>Aqui devem aparecer os códigos como <code>temp_current</code>, <code>temp_set</code>, etc.</p>
+            <pre id="dados-termostato">Clique no botão acima para carregar...</pre>
+        </div>
+
+        <div class="card">
+            <h2>2. Dados Brutos do Medidor Elétrico</h2>
+            <pre id="dados-medidor">Clique no botão acima para carregar...</pre>
+        </div>
+    </div>
+
+    <script>
+        async function buscarDadosDeTeste() {
+            const statusEl = document.getElementById('status-busca');
+            const termoEl = document.getElementById('dados-termostato');
+            const medidorEl = document.getElementById('dados-medidor');
+
+            statusEl.innerText = "Coletando dados da Tuya... por favor aguarde.";
+            termoEl.innerText = "Carregando...";
+            medidorEl.innerText = "Carregando...";
+
+            try {
+                // Chama a nossa NOVA rota de teste isolada
+                const res = await fetch('/api/teste-tuya');
+                const data = await res.json();
+
+                if (data.sucesso) {
+                    statusEl.innerText = `Sucesso! Atualizado em: ${data.timestamp}`;
+                    statusEl.style.color = "#04d361";
+                    
+                    // Exibe os dados formatados na tela
+                    termoEl.innerText = JSON.stringify(data.termostato_bruto, null, 2);
+                    medidorEl.innerText = JSON.stringify(data.medidor_bruto, null, 2);
+                } else {
+                    statusEl.innerText = "Erro na API de teste.";
+                    statusEl.style.color = "#f74141";
+                    termoEl.innerText = JSON.stringify(data, null, 2);
+                    medidorEl.innerText = "Falha ao obter dados.";
+                }
+            } catch (error) {
+                statusEl.innerText = "Erro ao conectar com a rota /api/teste-tuya.";
+                statusEl.style.color = "#f74141";
+                termoEl.innerText = error.message;
+                medidorEl.innerText = error.message;
+            }
+        }
+    </script>
+</body>
+</html>
