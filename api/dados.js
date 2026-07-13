@@ -1,5 +1,5 @@
 // ================================================================
-// api/dados.js - VERSÃO FINAL CORRIGIDA
+// api/dados.js - VERSÃO COMPLETA COM DEBUG PARA O TERMOSTATO
 // ================================================================
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
@@ -51,7 +51,7 @@ module.exports = async function handler(req, res) {
     const tokenData = await tokenRes.json();
     const token = tokenData.result?.access_token;
 
-    // Medidor
+    // 1. Coleta do Medidor Elétrico
     const t2 = Date.now().toString();
     const urlShadow = `/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`;
     const resShadow = await fetch(`${BASE_URL}${urlShadow}`, {
@@ -81,43 +81,10 @@ module.exports = async function handler(req, res) {
       frequencia: dpShadow(props, 'frequency'),
       falha: dpShadow(props, 'fault')
     };
-       // TERMOSTATO - usando shadow/properties (mesma do medidor)
-    let temperatura = { temp_atual: null };
+
+    // 2. Coleta do Termostato (Modo Investigação / Debug de Nomes)
+    let temperatura = { temp_atual: null, debug_todos_codigos: [] };
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
-        const url = `/v2.0/cloud/thing/${DEVICE_ID_TERMOSTATO}/shadow/properties`;
-        const res = await fetch(`${BASE_URL}${url}`, {
-          headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', url, token), t: t3, sign_method: 'HMAC-SHA256' }
-        });
-        const data = await res.json();
-
-        if (data.result && data.result.properties) {
-          const props = data.result.properties;
-          const val = dpShadow(props, 'temp_current');
-          if (val !== null) {
-            temperatura.temp_atual = Number(val).toFixed(1);
-          }
-        }
-      } catch (e) {}
-    }
-
-    
-    // Alarmes (simplificado)
-    let alertas = [];
-    const ta = parseFloat(eletrico.tensao_a);
-    if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
-
-    return res.status(200).json({
-      timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
-      status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
-      alertas,
-      eletrico,
-      temperatura,
-      banco_dados: "Gravação Sucesso"
-    });
-
-  } catch (err) {
-    return res.status(500).json({ erro: err.message });
-  }
-};
+        const urlTermo = `/v1.0/iot-03/devices/${
