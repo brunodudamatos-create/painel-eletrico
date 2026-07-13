@@ -67,6 +67,7 @@
   .tval{font-size:1.45rem;font-weight:700}
   .tunit{font-size:.68rem;color:#8b949e}
   .chart-container {height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
+  .debug-box{background:#111b27;border:1px dashed #58a6ff;padding:8px;border-radius:6px;font-size:.65rem;color:#8b949e;margin-top:8px;max-height:80px;overflow-y:auto;}
   footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
   @media(max-width:768px){
     main{padding:12px}
@@ -92,6 +93,7 @@
       <div class="tlabel">🌡️ Temperatura do Termostato</div>
       <div class="tnum" id="tval">--<span>°C</span></div>
       <div class="tsub">Última leitura: <b id="tset">--</b></div>
+      <div class="debug-box" id="debug_box" style="display:none;"></div>
     </div>
     <div class="gauge-wrap">
       <div class="gtitle">Escala do Painel (0°C → 60°C)</div>
@@ -271,7 +273,7 @@ function render(d) {
     set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 2, 'kWh');
     set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A'); set('pc', el.potencia_c, 0, 'W');
     set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
-    set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1); set('fpm', el.fat_pot_medio, 2);
+    set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1); set('fpm', el.falha, 0);
     if (d.alertas && d.alertas.length > 0) {
       abox.classList.add('show');
       document.getElementById('alist').innerHTML = d.alertas.map(a => `<div class="ai">${a.replace(/\*/g, '')}</div>`).join('');
@@ -279,23 +281,33 @@ function render(d) {
     adicPontoHistorico(el, d.timestamp_br);
   }
 
-  // --- LEITURA DA TEMPERATURA ---
+  // --- LEITURA DA TEMPERATURA E DEBUG DE CAMPOS ---
   const term = d.temperatura;
   if (term) {
     const tvalEl = document.getElementById('tval');
     const gfillEl = document.getElementById('gfill');
     const ael = document.getElementById('alarme');
+    const debugBox = document.getElementById('debug_box');
+
     if (term.temp_atual !== undefined && term.temp_atual !== null) {
       const temp = parseFloat(term.temp_atual);
       tvalEl.innerHTML = temp.toFixed(1) + '<span>°C</span>';
       gfillEl.style.width = Math.min(100, (temp / 60) * 100) + '%';
       ael.textContent = 'Conectado';
       ael.style.color = '#3fb950';
+      debugBox.style.display = 'none';
     } else {
       tvalEl.innerHTML = '--<span>°C</span>';
       gfillEl.style.width = '0%';
       ael.textContent = 'Sem Leitura (null)';
       ael.style.color = '#8b949e';
+
+      // Mostra os códigos recebidos para investigação visual direta na tela
+      if (term.debug_todos_codigos && Array.isArray(term.debug_todos_codigos)) {
+        debugBox.style.display = 'block';
+        debugBox.innerHTML = '<b>Códigos recebidos da Tuya:</b><br>' + 
+          term.debug_todos_codigos.map(i => `<code>${i.code}: ${i.value}</code>`).join(' | ');
+      }
     }
     document.getElementById('fmodo').textContent = d.banco_dados || 'OK';
     document.getElementById('tset').textContent = d.timestamp_br ? d.timestamp_br.split(',')[1].trim() : '--';
