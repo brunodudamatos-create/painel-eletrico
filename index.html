@@ -8,16 +8,20 @@
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+  
   header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
   header h1{font-size:1.05rem;font-weight:600;color:#58a6ff}
   .hright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .ts{font-size:.7rem;color:#8b949e}
+  
   .badge{padding:4px 12px;border-radius:20px;font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:5px;background:#1a4731;color:#3fb950;border:1px solid #238636}
   .badge.alerta{background:#3d1f00;color:#f0883e;border-color:#d29922}
   .badge.offline{background:#3d1111;color:#f85149;border-color:#f85149}
   .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  
   main{padding:18px 28px;max-width:1400px;margin:0 auto}
+  
   .temp-card{background:linear-gradient(135deg,#1c2a3a,#162032);border:1px solid #1f6feb;border-radius:14px;padding:22px 26px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:20px;align-items:center}
   .tlabel{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
   .tnum{font-size:3.6rem;font-weight:700;line-height:1;color:#58a6ff}
@@ -26,26 +30,31 @@
   .tnum.critico{color:#f85149}
   .tsub{font-size:.75rem;color:#8b949e;margin-top:5px}
   .tsub b{color:#58a6ff}
+  
   .gauge-wrap{display:flex;flex-direction:column;gap:5px}
   .gtitle{font-size:.7rem;color:#8b949e}
   .gbar{height:13px;background:#21262d;border-radius:7px;overflow:hidden}
   .gfill{height:100%;border-radius:7px;background:linear-gradient(90deg,#238636,#d29922,#f85149);transition:width .8s ease}
   .glabels{display:flex;justify-content:space-between;font-size:.65rem;color:#8b949e}
   .ginfo{display:flex;justify-content:space-between;margin-top:6px;font-size:.72rem;color:#8b949e}
+  
   .fan-box{display:flex;flex-direction:column;align-items:center;gap:7px}
   .ficon{font-size:2.6rem}
   .ficon.spin{animation:spin 1s linear infinite}
   @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   .fbadge{font-size:.75rem;font-weight:600;padding:4px 14px;border-radius:20px;background:#1a4731;color:#3fb950;border:1px solid #238636}
   .fbadge.off{background:#21262d;color:#8b949e;border-color:#30363d}
+  
   .alertas-box{background:#2d1b00;border:1px solid #d29922;border-radius:12px;padding:13px 17px;margin-bottom:18px;display:none}
   .alertas-box.show{display:block}
   .alertas-box.falha-rede{border-color:#f85149;background:#2d1111;}
   .alertas-box h3{font-size:.8rem;color:#d29922;margin-bottom:5px}
   .alertas-box.falha-rede h3{color:#f85149;}
   .ai{font-size:.8rem;color:#f0883e;padding:2px 0}
+  
   .stitle{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:#8b949e;margin-bottom:11px;display:flex;align-items:center;gap:7px}
   .stitle::after{content:'';flex:1;height:1px;background:#21262d}
+  
   .fases{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px}
   .fc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px}
   .fc.fa {border-top:3px solid #58a6ff}
@@ -55,20 +64,25 @@
   .fc.fa .ftit{color:#58a6ff}
   .fc.fb .ftit{color:#3fb950}
   .fc.fc2 .ftit{color:#f0883e}
+  
   .med{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid #21262d}
   .med:last-child{border-bottom:none}
   .mn{font-size:.72rem;color:#8b949e}
   .mv{font-size:.92rem;font-weight:600}
   .mu{font-size:.65rem;color:#8b949e;margin-left:2px}
+  
   .totais{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
   .tc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 16px}
   .tico{font-size:1.2rem;margin-bottom:3px}
   .tnome{font-size:.68rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
   .tval{font-size:1.45rem;font-weight:700}
   .tunit{font-size:.68rem;color:#8b949e}
+  
   .chart-container {height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
   .debug-box{background:#111b27;border:1px dashed #58a6ff;padding:8px;border-radius:6px;font-size:.65rem;color:#8b949e;margin-top:8px;max-height:80px;overflow-y:auto;}
+  
   footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
+  
   @media(max-width:768px){
     main{padding:12px}
     .temp-card{grid-template-columns:1fr}
@@ -80,7 +94,7 @@
 <body>
 
 <header>
-  <h1>⚡ Painel Elétrico — Monitor</h1>
+  <h1>⚡ Painel Elétrico — Monitor em Tempo Real - Brasileira Distribuidora de Frutas</h1>
   <div class="hright">
     <span class="ts" id="ts">A conectar...</span>
     <div class="badge" id="badge">🟢 NORMAL</div>
@@ -151,6 +165,9 @@
     <div class="tc"><div class="tico">📐</div><div class="tnome">Falhas (Status)</div><div class="tval" id="fpm">--</div><div class="tunit">código</div></div>
   </div>
 
+  <div class="stitle">📈 Tendência de Temperatura (°C)</div>
+  <div class="chart-container"><canvas id="tempChart"></canvas></div>
+
   <div class="stitle">📈 Tendência de Tensões (Volts)</div>
   <div class="chart-container"><canvas id="tensaoChart"></canvas></div>
 
@@ -158,7 +175,7 @@
   <div class="chart-container"><canvas id="correnteChart"></canvas></div>
 </main>
 
-<footer>Monitor Real &nbsp;|&nbsp; Valores Elétricos Preservados</footer>
+<footer>Atualização elétrica a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
 
 <script>
 const TUYA_DEVICE_TERMOSTATO = 'eb825839a833c89c38oyfc';
@@ -167,6 +184,17 @@ const API_HISTORICO = `https://painel-eletrico.vercel.app/api/historico?device_i
 
 let historico = [];
 
+// Gráfico de Temperatura
+const ctxTemp = document.getElementById('tempChart').getContext('2d');
+const chartTemp = new Chart(ctxTemp, {
+    type: 'line',
+    data: { labels: [], datasets: [
+        { label: 'Temperatura Real (°C)', data: [], borderColor: '#f85149', backgroundColor: 'rgba(248, 81, 73, 0.1)', tension: 0.3, fill: true }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false }
+});
+
+// Gráfico de Tensão
 const ctxTensao = document.getElementById('tensaoChart').getContext('2d');
 const chartTensao = new Chart(ctxTensao, {
     type: 'line',
@@ -178,6 +206,7 @@ const chartTensao = new Chart(ctxTensao, {
     options: { responsive: true, maintainAspectRatio: false }
 });
 
+// Gráfico de Corrente
 const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
 const chartCorrente = new Chart(ctxCorrente, {
     type: 'line',
@@ -191,6 +220,10 @@ const chartCorrente = new Chart(ctxCorrente, {
 
 function renderizarGraficos(dados) {
   const labels = dados.map(p => p.hora);
+  
+  chartTemp.data.labels = labels;
+  chartTemp.data.datasets[0].data = dados.map(p => p.temp);
+
   chartTensao.data.labels = labels;
   chartTensao.data.datasets[0].data = dados.map(p => p.va);
   chartTensao.data.datasets[1].data = dados.map(p => p.vb);
@@ -201,6 +234,7 @@ function renderizarGraficos(dados) {
   chartCorrente.data.datasets[1].data = dados.map(p => p.ib);
   chartCorrente.data.datasets[2].data = dados.map(p => p.ic);
 
+  chartTemp.update();
   chartTensao.update();
   chartCorrente.update();
 }
@@ -213,6 +247,7 @@ async function carregarHistorico() {
     
     historico = data.reverse().map(item => ({
       hora: new Date(item.created_at || item.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'}),
+      temp: item.temp_atual ? parseFloat(item.temp_atual) : null,
       va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
       ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
     }));
@@ -220,7 +255,7 @@ async function carregarHistorico() {
   } catch(e) { console.error("Erro histórico:", e); }
 }
 
-function adicPontoHistorico(el, timestampText) {
+function adicPontoHistorico(el, term, timestampText) {
   if (!el) return;
   let horaAtual = new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
   if(timestampText) {
@@ -228,11 +263,15 @@ function adicPontoHistorico(el, timestampText) {
     if(partes[1]) horaAtual = partes[1].substring(0, 5);
   }
   
+  const tempVal = (term && term.temp_atual !== undefined && term.temp_atual !== null) ? parseFloat(term.temp_atual) : null;
+
   const novoPonto = {
     hora: horaAtual,
+    temp: tempVal,
     va: el.tensao_a, vb: el.tensao_b, vc: el.tensao_c,
     ia: el.corrente_a, ib: el.corrente_b, ic: el.corrente_c
   };
+  
   if (historico.length > 0 && historico[historico.length - 1].hora === horaAtual) {
     historico[historico.length - 1] = novoPonto;
   } else {
@@ -274,14 +313,17 @@ function render(d) {
     set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A'); set('pc', el.potencia_c, 0, 'W');
     set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
     set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1); set('fpm', el.falha, 0);
+    
     if (d.alertas && d.alertas.length > 0) {
       abox.classList.add('show');
       document.getElementById('alist').innerHTML = d.alertas.map(a => `<div class="ai">${a.replace(/\*/g, '')}</div>`).join('');
     }
-    adicPontoHistorico(el, d.timestamp_br);
+    
+    // Adiciona ao gráfico a elétrica e o termostato na mesma rodada
+    adicPontoHistorico(el, d.temperatura, d.timestamp_br);
   }
 
-  // --- LEITURA DA TEMPERATURA E DEBUG DE CAMPOS ---
+  // --- LEITURA DA TEMPERATURA ---
   const term = d.temperatura;
   if (term) {
     const tvalEl = document.getElementById('tval');
@@ -289,23 +331,50 @@ function render(d) {
     const ael = document.getElementById('alarme');
     const debugBox = document.getElementById('debug_box');
 
+    // Identificação do estado do ventilador/switch caso seja enviado pela Tuya
+    const ficon = document.getElementById('ficon');
+    const fbadge = document.getElementById('fbadge');
+    let refrigLigada = false;
+    
+    if (term.debug_todos_codigos && Array.isArray(term.debug_todos_codigos)) {
+        const switchCode = term.debug_todos_codigos.find(c => c.code === 'switch');
+        if (switchCode && switchCode.value === true) {
+            refrigLigada = true;
+        }
+    }
+
+    if (refrigLigada) {
+        ficon.classList.add('spin');
+        fbadge.textContent = 'REFRIGERAÇÃO ON';
+        fbadge.className = 'fbadge';
+    } else {
+        ficon.classList.remove('spin');
+        fbadge.textContent = 'REFRIGERAÇÃO OFF';
+        fbadge.className = 'fbadge off';
+    }
+
+    // Processamento da temperatura numérica
     if (term.temp_atual !== undefined && term.temp_atual !== null) {
       const temp = parseFloat(term.temp_atual);
       tvalEl.innerHTML = temp.toFixed(1) + '<span>°C</span>';
+      
+      // Muda a cor do número se ficar muito quente
+      tvalEl.className = 'tnum' + (temp >= 50 ? ' critico' : temp >= 38 ? ' quente' : '');
+      
       gfillEl.style.width = Math.min(100, (temp / 60) * 100) + '%';
-      ael.textContent = 'Conectado';
-      ael.style.color = '#3fb950';
+      ael.textContent = temp >= 43.0 ? 'Alerta Ativo' : 'Conectado';
+      ael.style.color = temp >= 43.0 ? '#f85149' : '#3fb950';
       debugBox.style.display = 'none';
     } else {
       tvalEl.innerHTML = '--<span>°C</span>';
       gfillEl.style.width = '0%';
-      ael.textContent = 'Sem Leitura (null)';
+      ael.textContent = 'Sem Leitura';
       ael.style.color = '#8b949e';
 
-      // Mostra os códigos recebidos para investigação visual direta na tela
+      // Mostra debugs se a API devolver falha
       if (term.debug_todos_codigos && Array.isArray(term.debug_todos_codigos)) {
         debugBox.style.display = 'block';
-        debugBox.innerHTML = '<b>Códigos recebidos da Tuya:</b><br>' + 
+        debugBox.innerHTML = '<b>Códigos da Tuya:</b><br>' + 
           term.debug_todos_codigos.map(i => `<code>${i.code}: ${i.value}</code>`).join(' | ');
       }
     }
@@ -338,6 +407,10 @@ async function atualizar() {
 carregarHistorico();
 atualizar();
 setInterval(atualizar, 300000);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") carregarHistorico();
+});
 </script>
 </body>
 </html>
