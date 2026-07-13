@@ -1,5 +1,5 @@
 // ================================================================
-// api/dados.js - VERSÃO COM IMPORT (ES MODULE)
+// api/dados.js - VERSÃO COM IMPORT (ES MODULE) + GRAVAÇÃO SUPABASE
 // ================================================================
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -99,6 +99,7 @@ export default async function handler(req, res) {
             value: item.value
           }));
 
+          // CORREÇÃO: Lê apenas a temperatura real (temp_current)
           const itemTemp = dataTermo.result.find(i => i.code === 'temp_current');
 
           if (itemTemp && itemTemp.value != null) {
@@ -113,7 +114,41 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3. Alarmes
+    // 3. GRAVAÇÃO NO BANCO DE DADOS (Restaurada e com temp_atual)
+    let bancoStatus = "Não gravado";
+    try {
+      const { error: dbError } = await supabase
+        .from('telemetria_eletrica')
+        .insert([{
+          tensao_a: eletrico.tensao_a,
+          corrente_a: eletrico.corrente_a,
+          potencia_a: eletrico.potencia_a,
+          fat_pot_a: eletrico.fat_pot_a,
+          energia_a: eletrico.energia_a,
+          tensao_b: eletrico.tensao_b,
+          corrente_b: eletrico.corrente_b,
+          potencia_b: eletrico.potencia_b,
+          fat_pot_b: eletrico.fat_pot_b,
+          energia_b: eletrico.energia_b,
+          tensao_c: eletrico.tensao_c,
+          corrente_c: eletrico.corrente_c,
+          potencia_c: eletrico.potencia_c,
+          fat_pot_c: eletrico.fat_pot_c,
+          energia_c: eletrico.energia_c,
+          energia_total: eletrico.energia_total,
+          potencia_total: eletrico.potencia_total,
+          frequencia: eletrico.frequencia,
+          temp_atual: temperatura.temp_atual // Gravando a temperatura no BD!
+        }]);
+      
+      if (dbError) throw dbError;
+      bancoStatus = "Gravação Sucesso";
+    } catch (dbErr) {
+      console.error("Erro ao gravar no Supabase:", dbErr);
+      bancoStatus = "Erro Supabase: " + dbErr.message;
+    }
+
+    // 4. Alarmes
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
@@ -124,7 +159,7 @@ export default async function handler(req, res) {
       alertas,
       eletrico,
       temperatura,
-      banco_dados: "Gravação Sucesso"
+      banco_dados: bancoStatus
     });
 
   } catch (err) {
