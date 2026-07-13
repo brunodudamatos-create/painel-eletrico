@@ -81,9 +81,8 @@ module.exports = async function handler(req, res) {
       frequencia: dpShadow(props, 'frequency'),
       falha: dpShadow(props, 'fault')
     };
-
-        // Termostato
-    let temperatura = { temp_atual: null, status: "pendente" };
+    // Termostato - DEBUG
+    let temperatura = { temp_atual: null, status: "pendente", raw: null };
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
@@ -93,10 +92,13 @@ module.exports = async function handler(req, res) {
         });
         const data = await resp.json();
 
+        temperatura.raw = data; // para debug
+
         if (data.result && Array.isArray(data.result)) {
           const val = dpShadow(data.result, 'temp_current');
+          console.log("Valor temp_current encontrado:", val); // <--- importante
           if (val !== null) {
-            temperatura.temp_atual = Number(val).toFixed(1);   // scale 1
+            temperatura.temp_atual = Number(val).toFixed(1);
             temperatura.status = "ok";
           }
         }
