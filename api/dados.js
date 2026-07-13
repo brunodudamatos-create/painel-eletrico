@@ -99,10 +99,7 @@ export default async function handler(req, res) {
             value: item.value
           }));
 
-          const itemTemp = dataTermo.result.find(i => {
-            const c = (i.code || '').toLowerCase();
-            return c.includes('temp') || c.includes('current') || c.includes('deg');
-          });
+          const itemTemp = dataTermo.result.find(i => i.code === 'temp_current');
 
           if (itemTemp && itemTemp.value != null) {
             let val = itemTemp.value;
