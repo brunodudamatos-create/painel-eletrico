@@ -95,32 +95,31 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-   // --- 3. COLETA DE DADOS DO TERMOSTATO (ENDPOINT DE STATUS V1.0) ---
-    let temperatura = { temp_atual: null, raw_tuya: [] };
+   // --- 3. COLETA DE DADOS DO TERMOSTATO ---
+    let temperatura = { temp_atual: null, erro_tuya: null };
     if (DEVICE_ID_TERMOSTATO) {
-      const t3 = Date.now().toString();
-      const urlStatusTermo = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
-      const resStatusTermo = await fetch(`${BASE_URL}${urlStatusTermo}`, {
-        headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlStatusTermo, token), t: t3, sign_method: 'HMAC-SHA256' }
-      });
-      const dataStatusTermo = await resStatusTermo.json();
-      const propsTermo = dataStatusTermo.result || [];
-      
-      let valTemp = dpShadow(propsTermo, 'temp_current');
-      if (valTemp == null) valTemp = dpShadow(propsTermo, 'temperature');
-      if (valTemp == null) valTemp = dpShadow(propsTermo, 'cur_temperature');
-      
-      // Fallback caso o código venha por dp_id 3 ou similar na lista
-      if (valTemp == null && Array.isArray(propsTermo)) {
-        const itemAlt = propsTermo.find(i => i.code?.toLowerCase().includes('temp') || i.dp_id === 3);
-        if (itemAlt) valTemp = itemAlt.value;
+      try {
+        const t3 = Date.now().toString();
+        const urlStatusTermo = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
+        const resStatusTermo = await fetch(`${BASE_URL}${urlStatusTermo}`, {
+          headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlStatusTermo, token), t: t3, sign_method: 'HMAC-SHA256' }
+        });
+        const dataStatusTermo = await resStatusTermo.json();
+        
+        if (dataStatusTermo.success === false) {
+          temperatura.erro_tuya = dataStatusTermo.msg || "Erro na API da Tuya";
+        } else {
+          const propsTermo = dataStatusTermo.result || [];
+          let valTemp = dpShadow(propsTermo, 'temp_current');
+          if (valTemp == null) valTemp = dpShadow(propsTermo, 'temperature');
+          if (valTemp == null) valTemp = dpShadow(propsTermo, 'cur_temperature');
+          
+          temperatura.temp_atual = valTemp != null ? (valTemp > 100 ? valTemp / 10 : valTemp).toFixed(1) : valTemp;
+          temperatura.dados_brutos = propsTermo;
+        }
+      } catch (errTermo) {
+        temperatura.erro_tuya = errTermo.message;
       }
-
-      temperatura = {
-        temp_atual: valTemp != null ? (valTemp > 100 ? valTemp / 10 : valTemp).toFixed(1) : valTemp,
-        raw_tuya: propsTermo
-      };
-    }
     }
 
     // --- 4. LÓGICA DE ALARMES ---
