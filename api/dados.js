@@ -1,8 +1,8 @@
 // ================================================================
-// api/dados.js - VERSÃO COMPLETA COM DEBUG PARA O TERMOSTATO
+// api/dados.js - VERSÃO COM IMPORT (ES MODULE)
 // ================================================================
-const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
+import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
@@ -33,7 +33,7 @@ function dpShadow(props, codigo) {
   return item !== undefined ? item.value : null;
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
 
@@ -82,9 +82,55 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // 2. Coleta do Termostato (Modo Investigação / Debug de Nomes)
+    // 2. Coleta do Termostato
     let temperatura = { temp_atual: null, debug_todos_codigos: [] };
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
-        const urlTermo = `/v1.0/iot-03/devices/${
+        const urlTermo = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
+        const resTermo = await fetch(`${BASE_URL}${urlTermo}`, {
+          headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlTermo, token), t: t3, sign_method: 'HMAC-SHA256' }
+        });
+        const dataTermo = await resTermo.json();
+
+        if (dataTermo.result && Array.isArray(dataTermo.result)) {
+          temperatura.debug_todos_codigos = dataTermo.result.map(item => ({
+            code: item.code,
+            value: item.value
+          }));
+
+          const itemTemp = dataTermo.result.find(i => {
+            const c = (i.code || '').toLowerCase();
+            return c.includes('temp') || c.includes('current') || c.includes('deg');
+          });
+
+          if (itemTemp && itemTemp.value != null) {
+            let val = itemTemp.value;
+            temperatura.temp_atual = (val > 100 ? val / 10 : Number(val)).toFixed(1);
+          }
+        } else {
+          temperatura.debug_todos_codigos = dataTermo;
+        }
+      } catch (e) {
+        temperatura.debug_todos_codigos = [{ erro: e.message }];
+      }
+    }
+
+    // 3. Alarmes
+    let alertas = [];
+    const ta = parseFloat(eletrico.tensao_a);
+    if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
+
+    return res.status(200).json({
+      timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
+      status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
+      alertas,
+      eletrico,
+      temperatura,
+      banco_dados: "Gravação Sucesso"
+    });
+
+  } catch (err) {
+    return res.status(500).json({ erro: err.message });
+  }
+}
