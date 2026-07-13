@@ -81,32 +81,28 @@ module.exports = async function handler(req, res) {
       frequencia: dpShadow(props, 'frequency'),
       falha: dpShadow(props, 'fault')
     };
-    // Termostato - DEBUG
-    let temperatura = { temp_atual: null, status: "pendente", raw: null };
+       // TERMOSTATO - usando shadow/properties (mesma do medidor)
+    let temperatura = { temp_atual: null };
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
-        const url = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
-        const resp = await fetch(`${BASE_URL}${url}`, {
+        const url = `/v2.0/cloud/thing/${DEVICE_ID_TERMOSTATO}/shadow/properties`;
+        const res = await fetch(`${BASE_URL}${url}`, {
           headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', url, token), t: t3, sign_method: 'HMAC-SHA256' }
         });
-        const data = await resp.json();
+        const data = await res.json();
 
-        temperatura.raw = data; // para debug
-
-        if (data.result && Array.isArray(data.result)) {
-          const val = dpShadow(data.result, 'temp_current');
-          console.log("Valor temp_current encontrado:", val); // <--- importante
+        if (data.result && data.result.properties) {
+          const props = data.result.properties;
+          const val = dpShadow(props, 'temp_current');
           if (val !== null) {
             temperatura.temp_atual = Number(val).toFixed(1);
-            temperatura.status = "ok";
           }
         }
-      } catch (e) {
-        temperatura.status = "erro";
-      }
+      } catch (e) {}
     }
 
+    
     // Alarmes (simplificado)
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
