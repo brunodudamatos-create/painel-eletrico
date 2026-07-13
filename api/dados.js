@@ -95,8 +95,8 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-   // --- 3. COLETA DE DADOS DO TERMOSTATO ---
-    let temperatura = { temp_atual: null, erro_tuya: null };
+  // --- 3. COLETA DE DADOS DO TERMOSTATO (COM LOG DE DEBUGS) ---
+    let temperatura = { temp_atual: null };
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
@@ -106,19 +106,24 @@ module.exports = async function handler(req, res) {
         });
         const dataStatusTermo = await resStatusTermo.json();
         
-        if (dataStatusTermo.success === false) {
-          temperatura.erro_tuya = dataStatusTermo.msg || "Erro na API da Tuya";
-        } else {
-          const propsTermo = dataStatusTermo.result || [];
+        // Imprime a resposta exata no painel da Vercel (Logs)
+        console.log("RESPOSTA TUYA TERMOSTATO:", JSON.stringify(dataStatusTermo));
+
+        if (dataStatusTermo.result && Array.isArray(dataStatusTermo.result)) {
+          const propsTermo = dataStatusTermo.result;
           let valTemp = dpShadow(propsTermo, 'temp_current');
           if (valTemp == null) valTemp = dpShadow(propsTermo, 'temperature');
           if (valTemp == null) valTemp = dpShadow(propsTermo, 'cur_temperature');
           
+          // Se ainda for nulo, pega o primeiro valor que parecer número ou temperatura
+          if (valTemp == null && propsTermo.length > 0) {
+            valTemp = propsTermo[0].value;
+          }
+
           temperatura.temp_atual = valTemp != null ? (valTemp > 100 ? valTemp / 10 : valTemp).toFixed(1) : valTemp;
-          temperatura.dados_brutos = propsTermo;
         }
       } catch (errTermo) {
-        temperatura.erro_tuya = errTermo.message;
+        console.error("ERRO AO BUSCAR TERMOSTATO:", errTermo);
       }
     }
 
