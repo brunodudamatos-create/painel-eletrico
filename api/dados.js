@@ -113,15 +113,20 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // 3. DADOS DO TERMOSTATO (melhorado)
-    let temperatura = { temp_atual: null, status: "não configurado" };
+       // 3. DADOS DO TERMOSTATO - ULTRA DEBUG
+    let temperatura = { 
+      temp_atual: null, 
+      status: "não configurado", 
+      raw_response: null,
+      found_codes: []
+    };
 
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
         const urlStatusTermo = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
         
-        console.log(`Buscando termostato: ${DEVICE_ID_TERMOSTATO}`);
+        console.log(`[TERMOSTATO] === INICIANDO BUSCA === ID: ${DEVICE_ID_TERMOSTATO}`);
 
         const resStatusTermo = await fetch(`${BASE_URL}${urlStatusTermo}`, {
           headers: { 
@@ -134,38 +139,56 @@ module.exports = async function handler(req, res) {
         });
 
         const dataStatusTermo = await resStatusTermo.json();
-        console.log("RESPOSTA COMPLETA TERMOSTATO:", JSON.stringify(dataStatusTermo));
+        
+        console.log(`[TERMOSTATO] Status HTTP: ${resStatusTermo.status}`);
+        console.log(`[TERMOSTATO] Resposta completa:`, JSON.stringify(dataStatusTermo, null, 2));
+
+        temperatura.raw_response = dataStatusTermo;
 
         if (dataStatusTermo.result && Array.isArray(dataStatusTermo.result)) {
           const propsTermo = dataStatusTermo.result;
+          
+          // Lista todos os codes disponíveis (muito útil!)
+          temperatura.found_codes = propsTermo.map(p => ({code: p.code, value: p.value}));
 
-          let valTemp = dpShadow(propsTermo, 'temp_current') ||
-                       dpShadow(propsTermo, 'temperature') ||
-                       dpShadow(propsTermo, 'cur_temperature') ||
-                       dpShadow(propsTermo, 'current_temperature');
+          console.log(`[TERMOSTATO] Todos os codes disponíveis:`, temperatura.found_codes);
 
-          if (valTemp == null && propsTermo.length > 0) {
-            valTemp = propsTermo.find(p => typeof p.value === 'number')?.value;
+          // Tenta vários nomes possíveis
+          let valTemp = null;
+          const possibleCodes = ['temp_current', 'temperature', 'cur_temperature', 'current_temperature', 'temp', 'TempCurrent', 'current_temp'];
+          
+          for (const code of possibleCodes) {
+            valTemp = dpShadow(propsTermo, code);
+            if (valTemp !== null) {
+              console.log(`[TERMOSTATO] Encontrado no code: ${code} → valor ${valTemp}`);
+              break;
+            }
           }
 
-          temperatura.temp_atual = valTemp != null 
-            ? (valTemp > 100 ? (valTemp / 10).toFixed(1) : valTemp) 
-            : null;
+          if (valTemp == null && propsTermo.length > 0) {
+            const numeric = propsTermo.find(p => typeof p.value === 'number' && p.value > 0);
+            if (numeric) {
+              valTemp = numeric.value;
+              console.log(`[TERMOSTATO] Pegando primeiro valor numérico: ${valTemp} (code: ${numeric.code})`);
+            }
+          }
 
-          temperatura.status = "ok";
-          console.log(`Temperatura encontrada: ${temperatura.temp_atual}°C`);
+          if (valTemp != null) {
+            temperatura.temp_atual = (valTemp > 100 ? (valTemp / 10) : valTemp).toFixed(1);
+            temperatura.status = "ok";
+          } else {
+            temperatura.status = "valor não encontrado";
+          }
+        } else {
+          temperatura.status = "formato inválido";
         }
       } catch (errTermo) {
-        console.error("ERRO AO BUSCAR TERMOSTATO:", errTermo);
-        temperatura.status = "erro";
+        console.error("[TERMOSTATO] ERRO GRAVE:", errTermo.message);
+        temperatura.status = "erro_exception";
       }
-    } else {
-      console.log("AVISO: DEVICE_ID_TERMOSTATO não configurado");
     }
 
-    // ... (o resto do código de alarmes, Supabase e retorno continua igual)
-
-    // 4 a 7 (mantive igual, só cole o resto do seu código original aqui)
+    console.log("[TERMOSTATO] Resultado final:", temperatura);
 
     // --- 4. LÓGICA DE ALARMES ---
     let alertas = [];
