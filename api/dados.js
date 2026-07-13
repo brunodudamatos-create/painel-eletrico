@@ -82,7 +82,7 @@ module.exports = async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // Termostato - temp_current
+        // Termostato
     let temperatura = { temp_atual: null, status: "pendente" };
     if (DEVICE_ID_TERMOSTATO) {
       try {
@@ -96,7 +96,7 @@ module.exports = async function handler(req, res) {
         if (data.result && Array.isArray(data.result)) {
           const val = dpShadow(data.result, 'temp_current');
           if (val !== null) {
-            temperatura.temp_atual = Number(val).toFixed(1);
+            temperatura.temp_atual = Number(val).toFixed(1);   // scale 1
             temperatura.status = "ok";
           }
         }
