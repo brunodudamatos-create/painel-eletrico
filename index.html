@@ -184,12 +184,12 @@ const API_HISTORICO = `https://painel-eletrico.vercel.app/api/historico?device_i
 
 let historico = [];
 
-// Gráfico de Temperatura
+// Gráfico de Temperatura (COM SPANGAPS ATIVADO PARA NÃO QUEBRAR A LINHA)
 const ctxTemp = document.getElementById('tempChart').getContext('2d');
 const chartTemp = new Chart(ctxTemp, {
     type: 'line',
     data: { labels: [], datasets: [
-        { label: 'Temperatura Real (°C)', data: [], borderColor: '#f85149', backgroundColor: 'rgba(248, 81, 73, 0.1)', tension: 0.3, fill: true }
+        { label: 'Temperatura Real (°C)', data: [], borderColor: '#f85149', backgroundColor: 'rgba(248, 81, 73, 0.1)', tension: 0.3, fill: true, spanGaps: true, pointRadius: 3 }
     ]},
     options: { responsive: true, maintainAspectRatio: false }
 });
@@ -199,9 +199,9 @@ const ctxTensao = document.getElementById('tensaoChart').getContext('2d');
 const chartTensao = new Chart(ctxTensao, {
     type: 'line',
     data: { labels: [], datasets: [
-        { label: 'Fase A', data: [], borderColor: '#58a6ff', tension: 0.3 },
-        { label: 'Fase B', data: [], borderColor: '#3fb950', tension: 0.3 },
-        { label: 'Fase C', data: [], borderColor: '#f0883e', tension: 0.3 }
+        { label: 'Fase A', data: [], borderColor: '#58a6ff', tension: 0.3, spanGaps: true },
+        { label: 'Fase B', data: [], borderColor: '#3fb950', tension: 0.3, spanGaps: true },
+        { label: 'Fase C', data: [], borderColor: '#f0883e', tension: 0.3, spanGaps: true }
     ]},
     options: { responsive: true, maintainAspectRatio: false }
 });
@@ -211,9 +211,9 @@ const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
 const chartCorrente = new Chart(ctxCorrente, {
     type: 'line',
     data: { labels: [], datasets: [
-        { label: 'Fase A (A)', data: [], borderColor: '#58a6ff', tension: 0.3 },
-        { label: 'Fase B (A)', data: [], borderColor: '#3fb950', tension: 0.3 },
-        { label: 'Fase C (A)', data: [], borderColor: '#f0883e', tension: 0.3 }
+        { label: 'Fase A (A)', data: [], borderColor: '#58a6ff', tension: 0.3, spanGaps: true },
+        { label: 'Fase B (A)', data: [], borderColor: '#3fb950', tension: 0.3, spanGaps: true },
+        { label: 'Fase C (A)', data: [], borderColor: '#f0883e', tension: 0.3, spanGaps: true }
     ]},
     options: { responsive: true, maintainAspectRatio: false }
 });
@@ -245,12 +245,27 @@ async function carregarHistorico() {
     if (!r.ok) return;
     const data = await r.json();
     
-    historico = data.reverse().map(item => ({
-      hora: new Date(item.created_at || item.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'}),
-      temp: item.temp_atual ? parseFloat(item.temp_atual) : null,
-      va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
-      ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
-    }));
+    // Mapeamento com Memória Local: Impede que a temperatura suma se o banco retornar null
+    historico = data.reverse().map(item => {
+      const h = new Date(item.created_at || item.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
+      
+      // Procura se já tínhamos esse ponto acumulado localmente
+      const pontoLocal = historico.find(p => p.hora === h);
+      
+      // Tenta pegar a temperatura do banco, se vier nulo e tivermos salvo na tela, mantém a da tela.
+      let tempDoBanco = item.temp_atual ? parseFloat(item.temp_atual) : (item.temperatura ? parseFloat(item.temperatura) : null);
+      if (tempDoBanco === null && pontoLocal && pontoLocal.temp !== null) {
+        tempDoBanco = pontoLocal.temp;
+      }
+
+      return {
+        hora: h,
+        temp: tempDoBanco,
+        va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
+        ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
+      };
+    });
+    
     renderizarGraficos(historico);
   } catch(e) { console.error("Erro histórico:", e); }
 }
@@ -331,7 +346,7 @@ function render(d) {
     const ael = document.getElementById('alarme');
     const debugBox = document.getElementById('debug_box');
 
-    // Identificação do estado do ventilador/switch caso seja enviado pela Tuya
+    // Identificação do estado do ventilador/switch
     const ficon = document.getElementById('ficon');
     const fbadge = document.getElementById('fbadge');
     let refrigLigada = false;
