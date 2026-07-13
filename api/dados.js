@@ -46,6 +46,10 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
 
+  console.log("DEBUG VARS:", {
+    medidor: process.env.TUYA_DEVICE_MEDIDOR,
+    termostato: process.env.TUYA_DEVICE_TERMOSTATO
+  
   const CLIENT_ID = process.env.TUYA_CLIENT_ID;
   const CLIENT_SECRET = process.env.TUYA_CLIENT_SECRET;
   const DEVICE_ID_MEDIDOR = process.env.TUYA_DEVICE_MEDIDOR;
