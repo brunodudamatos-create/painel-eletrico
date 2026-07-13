@@ -96,7 +96,7 @@ module.exports = async function handler(req, res) {
         if (data.result && Array.isArray(data.result)) {
           const val = dpShadow(data.result, 'temp_current');
           if (val !== null) {
-            temperatura.temp_atual = (val / 10).toFixed(1);
+            temperatura.temp_atual = Number(val).toFixed(1);
             temperatura.status = "ok";
           }
         }
