@@ -113,10 +113,10 @@
       <div class="tnum" id="tval">--<span>°C</span></div>
       <div class="tsub">Setpoint ventilador: <b id="tset">--°C</b></div>
     </div>
-    <div class="gauge-wrap">
-      <div class="gtitle">Nível de temperatura (0°C → 60°C)</div>
+    <<div class="gauge-wrap">
+      <div class="gtitle">Nível de temperatura (0°C → <span id="tmax-label">60°C</span>)</div>
       <div class="gbar"><div class="gfill" id="gfill" style="width:0%"></div></div>
-      <div class="glabels"><span>0°C</span><span style="color:#d29922">38°C ⚠️</span><span style="color:#f85149">60°C 🔴</span></div>
+      <div class="glabels"><span>0°C</span><span id="gwarn-label" style="color:#d29922">--°C ⚠️</span><span style="color:#f85149">60°C 🔴</span></div>
       <div class="ginfo">
         <span>Alarme: <span id="alarme" style="color:#3fb950">Inativo</span></span>
         <span>Banco: <span id="fmodo">--</span></span>
