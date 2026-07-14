@@ -83,7 +83,7 @@ export default async function handler(req, res) {
     };
 
     // 2. Coleta do Termostato
-    let temperatura = { temp_atual: null, debug_todos_codigos: [] };
+    let temperatura = { temp_atual: null, temp_set: null, debug_todos_codigos: [] };
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
@@ -99,12 +99,18 @@ export default async function handler(req, res) {
             value: item.value
           }));
 
-          // CORREÇÃO: Lê apenas a temperatura real (temp_current)
+          // Lê a temperatura real (temp_current)
           const itemTemp = dataTermo.result.find(i => i.code === 'temp_current');
-
           if (itemTemp && itemTemp.value != null) {
             let val = itemTemp.value;
             temperatura.temp_atual = (val > 100 ? val / 10 : Number(val)).toFixed(1);
+          }
+
+          // Lê o Setpoint do termostato (temp_set)
+          const itemSet = dataTermo.result.find(i => i.code === 'temp_set');
+          if (itemSet && itemSet.value != null) {
+            let val = itemSet.value;
+            temperatura.temp_set = (val > 100 ? val / 10 : Number(val)).toFixed(1);
           }
         } else {
           temperatura.debug_todos_codigos = dataTermo;
@@ -113,7 +119,6 @@ export default async function handler(req, res) {
         temperatura.debug_todos_codigos = [{ erro: e.message }];
       }
     }
-
     // 3. GRAVAÇÃO NO BANCO DE DADOS (Restaurada e com temp_atual)
     let bancoStatus = "Não gravado";
     try {
