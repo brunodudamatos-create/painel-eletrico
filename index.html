@@ -310,14 +310,16 @@
       set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A'); set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
       set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1); set('fpm', el.falha, 0);
     }
-    const temp = d.temperatura;
-    if (temp && temp.temp_atual !== null) {
-      document.getElementById('tval').innerHTML = `${temp.temp_atual}<span>°C</span>`;
-      document.getElementById('gfill').style.width = Math.min(100, (temp.temp_atual / 60) * 100) + '%';
+  const temp = d.temperatura;
+    if (temp) {
+      if (temp.temp_atual !== null && temp.temp_atual !== undefined) {
+        document.getElementById('tval').innerHTML = `${temp.temp_atual}<span>°C</span>`;
+        document.getElementById('gfill').style.width = Math.min(100, (temp.temp_atual / 60) * 100) + '%';
+      }
+      if (temp.temp_set !== null && temp.temp_set !== undefined) {
+        document.getElementById('tset').textContent = `${temp.temp_set}°C`;
+      }
     }
-    document.getElementById('fmodo').textContent = d.banco_dados || 'OK';
-    document.getElementById('tset').textContent = '38.0°C';
-  }
 
   async function carregarHistorico() {
     try {
