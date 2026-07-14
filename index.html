@@ -314,10 +314,23 @@
     if (temp) {
       if (temp.temp_atual !== null && temp.temp_atual !== undefined) {
         document.getElementById('tval').innerHTML = `${temp.temp_atual}<span>°C</span>`;
-        document.getElementById('gfill').style.width = Math.min(100, (temp.temp_atual / 60) * 100) + '%';
+        
+        // Pega a temperatura atual e o setpoint dinâmico (se não houver setpoint, usa 38 como segurança)
+        const tAtual = parseFloat(temp.temp_atual);
+        const tSet = temp.temp_set ? parseFloat(temp.temp_set) : 38.0;
+        
+        // Define o limite máximo da barra proporcional ao setpoint (ex: setpoint + 22°C, com teto mínimo de 60°C)
+        const tMax = Math.max(60, tSet + 22);
+        
+        // Atualiza a largura da barra baseada no novo teto dinâmico
+        document.getElementById('gfill').style.width = Math.min(100, (tAtual / tMax) * 100) + '%';
+        document.getElementById('tmax-label').textContent = `${tMax.toFixed(0)}°C`;
       }
+      
       if (temp.temp_set !== null && temp.temp_set !== undefined) {
         document.getElementById('tset').textContent = `${temp.temp_set}°C`;
+        // Atualiza o aviso amarelo na barra para o valor exato do setpoint do equipamento
+        document.getElementById('gwarn-label').textContent = `${temp.temp_set}°C ⚠️`;
       }
     }
 
