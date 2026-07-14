@@ -8,20 +8,19 @@
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
-  
+
   header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
   header h1{font-size:1.05rem;font-weight:600;color:#58a6ff}
   .hright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .ts{font-size:.7rem;color:#8b949e}
-  
   .badge{padding:4px 12px;border-radius:20px;font-size:.7rem;font-weight:600;display:flex;align-items:center;gap:5px;background:#1a4731;color:#3fb950;border:1px solid #238636}
   .badge.alerta{background:#3d1f00;color:#f0883e;border-color:#d29922}
   .badge.offline{background:#3d1111;color:#f85149;border-color:#f85149}
   .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-  
+
   main{padding:18px 28px;max-width:1400px;margin:0 auto}
-  
+
   .temp-card{background:linear-gradient(135deg,#1c2a3a,#162032);border:1px solid #1f6feb;border-radius:14px;padding:22px 26px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:20px;align-items:center}
   .tlabel{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
   .tnum{font-size:3.6rem;font-weight:700;line-height:1;color:#58a6ff}
@@ -30,31 +29,38 @@
   .tnum.critico{color:#f85149}
   .tsub{font-size:.75rem;color:#8b949e;margin-top:5px}
   .tsub b{color:#58a6ff}
-  
+
   .gauge-wrap{display:flex;flex-direction:column;gap:5px}
   .gtitle{font-size:.7rem;color:#8b949e}
   .gbar{height:13px;background:#21262d;border-radius:7px;overflow:hidden}
   .gfill{height:100%;border-radius:7px;background:linear-gradient(90deg,#238636,#d29922,#f85149);transition:width .8s ease}
   .glabels{display:flex;justify-content:space-between;font-size:.65rem;color:#8b949e}
   .ginfo{display:flex;justify-content:space-between;margin-top:6px;font-size:.72rem;color:#8b949e}
-  
+
   .fan-box{display:flex;flex-direction:column;align-items:center;gap:7px}
   .ficon{font-size:2.6rem}
   .ficon.spin{animation:spin 1s linear infinite}
   @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   .fbadge{font-size:.75rem;font-weight:600;padding:4px 14px;border-radius:20px;background:#1a4731;color:#3fb950;border:1px solid #238636}
   .fbadge.off{background:#21262d;color:#8b949e;border-color:#30363d}
-  
+  .fmodo{font-size:.68rem;color:#8b949e}
+
   .alertas-box{background:#2d1b00;border:1px solid #d29922;border-radius:12px;padding:13px 17px;margin-bottom:18px;display:none}
   .alertas-box.show{display:block}
   .alertas-box.falha-rede{border-color:#f85149;background:#2d1111;}
   .alertas-box h3{font-size:.8rem;color:#d29922;margin-bottom:5px}
   .alertas-box.falha-rede h3{color:#f85149;}
   .ai{font-size:.8rem;color:#f0883e;padding:2px 0}
-  
-  .stitle{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:#8b949e;margin-bottom:11px;display:flex;align-items:center;gap:7px}
-  .stitle::after{content:'';flex:1;height:1px;background:#21262d}
-  
+
+  /* TÍTULOS E BOTÕES DOS GRÁFICOS */
+  .stitle{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:#8b949e;margin-bottom:11px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .stitle-left {display:flex;align-items:center;gap:7px;flex:1}
+  .stitle-left::after{content:'';flex:1;height:1px;background:#21262d}
+  .chart-btns {display:flex;gap:4px}
+  .c-btn {background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:.62rem;font-weight:600;padding:2px 8px;border-radius:4px;cursor:pointer;transition:all .2s}
+  .c-btn:hover {background:#30363d;color:#e6edf3}
+  .c-btn.active {background:#1f6feb;color:#fff;border-color:#58a6ff}
+
   .fases{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px}
   .fc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px}
   .fc.fa {border-top:3px solid #58a6ff}
@@ -64,25 +70,24 @@
   .fc.fa .ftit{color:#58a6ff}
   .fc.fb .ftit{color:#3fb950}
   .fc.fc2 .ftit{color:#f0883e}
-  
+
   .med{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid #21262d}
   .med:last-child{border-bottom:none}
   .mn{font-size:.72rem;color:#8b949e}
   .mv{font-size:.92rem;font-weight:600}
   .mu{font-size:.65rem;color:#8b949e;margin-left:2px}
-  
+
   .totais{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
   .tc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 16px}
   .tico{font-size:1.2rem;margin-bottom:3px}
   .tnome{font-size:.68rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
   .tval{font-size:1.45rem;font-weight:700}
   .tunit{font-size:.68rem;color:#8b949e}
-  
+
   .chart-container {height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
-  .debug-box{background:#111b27;border:1px dashed #58a6ff;padding:8px;border-radius:6px;font-size:.65rem;color:#8b949e;margin-top:8px;max-height:80px;overflow-y:auto;}
   
   footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
-  
+
   @media(max-width:768px){
     main{padding:12px}
     .temp-card{grid-template-columns:1fr}
@@ -104,23 +109,23 @@
 <main>
   <div class="temp-card">
     <div>
-      <div class="tlabel">🌡️ Temperatura do Termostato</div>
+      <div class="tlabel">🌡️ Temperatura do Painel</div>
       <div class="tnum" id="tval">--<span>°C</span></div>
-      <div class="tsub">Última leitura: <b id="tset">--</b></div>
-      <div class="debug-box" id="debug_box" style="display:none;"></div>
+      <div class="tsub">Setpoint ventilador: <b id="tset">--°C</b></div>
     </div>
     <div class="gauge-wrap">
-      <div class="gtitle">Escala do Painel (0°C → 60°C)</div>
+      <div class="gtitle">Nível de temperatura (0°C → 60°C)</div>
       <div class="gbar"><div class="gfill" id="gfill" style="width:0%"></div></div>
-      <div class="glabels"><span>0°C</span><span>30°C</span><span>60°C 🔴</span></div>
+      <div class="glabels"><span>0°C</span><span style="color:#d29922">38°C ⚠️</span><span style="color:#f85149">60°C 🔴</span></div>
       <div class="ginfo">
-        <span>Status Sensor: <span id="alarme" style="color:#8b949e">--</span></span>
-        <span>Banco de Dados: <span id="fmodo" style="color:#58a6ff">--</span></span>
+        <span>Alarme: <span id="alarme" style="color:#3fb950">Inativo</span></span>
+        <span>Banco: <span id="fmodo">--</span></span>
       </div>
     </div>
     <div class="fan-box">
       <div class="ficon" id="ficon">🌀</div>
-      <div class="fbadge off" id="fbadge">REFRIGERAÇÃO OFF</div>
+      <div class="fbadge off" id="fbadge">VENTILADOR OFF</div>
+      <div class="fmodo" id="fmodolab">--</div>
     </div>
   </div>
 
@@ -162,270 +167,198 @@
     <div class="tc"><div class="tico">⚡</div><div class="tnome">Potência Total</div><div class="tval" id="ptotal">--</div><div class="tunit">W</div></div>
     <div class="tc"><div class="tico">🔋</div><div class="tnome">Energia Total</div><div class="tval" id="etotal">--</div><div class="tunit">kWh</div></div>
     <div class="tc"><div class="tico">〰️</div><div class="tnome">Frequência</div><div class="tval" id="freq">--</div><div class="tunit">Hz</div></div>
-    <div class="tc"><div class="tico">📐</div><div class="tnome">Falhas (Status)</div><div class="tval" id="fpm">--</div><div class="tunit">código</div></div>
+    <div class="tc"><div class="tico">📐</div><div class="tnome">Status</div><div class="tval" id="fpm">--</div><div class="tunit">código</div></div>
   </div>
 
-  <div class="stitle">📈 Tendência de Temperatura (°C)</div>
+  <div class="stitle">
+    <div class="stitle-left">📈 Tendência de Temperatura (°C)</div>
+    <div class="chart-btns">
+      <button class="c-btn" onclick="mudarPeriodo('temp', 144, this)">12h</button>
+      <button class="c-btn" onclick="mudarPeriodo('temp', 288, this)">24h</button>
+      <button class="c-btn active" onclick="mudarPeriodo('temp', 432, this)">36h</button>
+    </div>
+  </div>
   <div class="chart-container"><canvas id="tempChart"></canvas></div>
 
-  <div class="stitle">📈 Tendência de Tensões (Volts)</div>
+  <div class="stitle">
+    <div class="stitle-left">📈 Tendência de Tensões (Volts)</div>
+    <div class="chart-btns">
+      <button class="c-btn" onclick="mudarPeriodo('tensao', 144, this)">12h</button>
+      <button class="c-btn" onclick="mudarPeriodo('tensao', 288, this)">24h</button>
+      <button class="c-btn active" onclick="mudarPeriodo('tensao', 432, this)">36h</button>
+    </div>
+  </div>
   <div class="chart-container"><canvas id="tensaoChart"></canvas></div>
 
-  <div class="stitle">📈 Tendência de Correntes (Amperes)</div>
+  <div class="stitle">
+    <div class="stitle-left">📈 Tendência de Correntes (Amperes)</div>
+    <div class="chart-btns">
+      <button class="c-btn" onclick="mudarPeriodo('corrente', 144, this)">12h</button>
+      <button class="c-btn" onclick="mudarPeriodo('corrente', 288, this)">24h</button>
+      <button class="c-btn active" onclick="mudarPeriodo('corrente', 432, this)">36h</button>
+    </div>
+  </div>
   <div class="chart-container"><canvas id="correnteChart"></canvas></div>
 </main>
 
-<footer>Atualização elétrica a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
+<footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
 
 <script>
-const TUYA_DEVICE_TERMOSTATO = 'eb825839a833c89c38oyfc';
-const API_URL = `https://painel-eletrico.vercel.app/api/dados?device_id=${TUYA_DEVICE_TERMOSTATO}`; 
-const API_HISTORICO = `https://painel-eletrico.vercel.app/api/historico?device_id=${TUYA_DEVICE_TERMOSTATO}`;
+  const TUYA_DEVICE_TERMOSTATO = 'eb825839a833c89c38oyfc';
+  const API_URL = `https://painel-eletrico.vercel.app/api/dados?device_id=${TUYA_DEVICE_TERMOSTATO}`;
+  const API_HISTORICO = `https://painel-eletrico.vercel.app/api/historico?device_id=${TUYA_DEVICE_TERMOSTATO}`;
 
-let historico = [];
+  let historico = [];
+  let ultimaAtualizacao = Date.now();
 
-// Gráfico de Temperatura (COM SPANGAPS ATIVADO PARA NÃO QUEBRAR A LINHA)
-const ctxTemp = document.getElementById('tempChart').getContext('2d');
-const chartTemp = new Chart(ctxTemp, {
-    type: 'line',
-    data: { labels: [], datasets: [
-        { label: 'Temperatura Real (°C)', data: [], borderColor: '#f85149', backgroundColor: 'rgba(248, 81, 73, 0.1)', tension: 0.3, fill: true, spanGaps: true, pointRadius: 3 }
-    ]},
-    options: { responsive: true, maintainAspectRatio: false }
-});
-
-// Gráfico de Tensão
-const ctxTensao = document.getElementById('tensaoChart').getContext('2d');
-const chartTensao = new Chart(ctxTensao, {
-    type: 'line',
-    data: { labels: [], datasets: [
-        { label: 'Fase A', data: [], borderColor: '#58a6ff', tension: 0.3, spanGaps: true },
-        { label: 'Fase B', data: [], borderColor: '#3fb950', tension: 0.3, spanGaps: true },
-        { label: 'Fase C', data: [], borderColor: '#f0883e', tension: 0.3, spanGaps: true }
-    ]},
-    options: { responsive: true, maintainAspectRatio: false }
-});
-
-// Gráfico de Corrente
-const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
-const chartCorrente = new Chart(ctxCorrente, {
-    type: 'line',
-    data: { labels: [], datasets: [
-        { label: 'Fase A (A)', data: [], borderColor: '#58a6ff', tension: 0.3, spanGaps: true },
-        { label: 'Fase B (A)', data: [], borderColor: '#3fb950', tension: 0.3, spanGaps: true },
-        { label: 'Fase C (A)', data: [], borderColor: '#f0883e', tension: 0.3, spanGaps: true }
-    ]},
-    options: { responsive: true, maintainAspectRatio: false }
-});
-
-function renderizarGraficos(dados) {
-  const labels = dados.map(p => p.hora);
-  
-  chartTemp.data.labels = labels;
-  chartTemp.data.datasets[0].data = dados.map(p => p.temp);
-
-  chartTensao.data.labels = labels;
-  chartTensao.data.datasets[0].data = dados.map(p => p.va);
-  chartTensao.data.datasets[1].data = dados.map(p => p.vb);
-  chartTensao.data.datasets[2].data = dados.map(p => p.vc);
-
-  chartCorrente.data.labels = labels;
-  chartCorrente.data.datasets[0].data = dados.map(p => p.ia);
-  chartCorrente.data.datasets[1].data = dados.map(p => p.ib);
-  chartCorrente.data.datasets[2].data = dados.map(p => p.ic);
-
-  chartTemp.update();
-  chartTensao.update();
-  chartCorrente.update();
-}
-
-async function carregarHistorico() {
-  try {
-    const r = await fetch(API_HISTORICO);
-    if (!r.ok) return;
-    const data = await r.json();
-    
-    // Mapeamento com Memória Local: Impede que a temperatura suma se o banco retornar null
-    historico = data.reverse().map(item => {
-      const h = new Date(item.created_at || item.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
-      
-      // Procura se já tínhamos esse ponto acumulado localmente
-      const pontoLocal = historico.find(p => p.hora === h);
-      
-      // Tenta pegar a temperatura do banco, se vier nulo e tivermos salvo na tela, mantém a da tela.
-      let tempDoBanco = item.temp_atual ? parseFloat(item.temp_atual) : (item.temperatura ? parseFloat(item.temperatura) : null);
-      if (tempDoBanco === null && pontoLocal && pontoLocal.temp !== null) {
-        tempDoBanco = pontoLocal.temp;
-      }
-
-      return {
-        hora: h,
-        temp: tempDoBanco,
-        va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
-        ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
-      };
-    });
-    
-    renderizarGraficos(historico);
-  } catch(e) { console.error("Erro histórico:", e); }
-}
-
-function adicPontoHistorico(el, term, timestampText) {
-  if (!el) return;
-  let horaAtual = new Date().toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
-  if(timestampText) {
-    const partes = timestampText.split(' ');
-    if(partes[1]) horaAtual = partes[1].substring(0, 5);
-  }
-  
-  const tempVal = (term && term.temp_atual !== undefined && term.temp_atual !== null) ? parseFloat(term.temp_atual) : null;
-
-  const novoPonto = {
-    hora: horaAtual,
-    temp: tempVal,
-    va: el.tensao_a, vb: el.tensao_b, vc: el.tensao_c,
-    ia: el.corrente_a, ib: el.corrente_b, ic: el.corrente_c
+  // Limites por gráfico (padrão em 432 = 36h)
+  let limites = {
+    temp: 432,
+    tensao: 432,
+    corrente: 432
   };
-  
-  if (historico.length > 0 && historico[historico.length - 1].hora === horaAtual) {
-    historico[historico.length - 1] = novoPonto;
-  } else {
-    historico.push(novoPonto);
-  }
-  if (historico.length > 100) historico.shift();
-  renderizarGraficos(historico);
-}
 
-function set(id, val, dec, unit) {
-  const el = document.getElementById(id);
-  if (!el || val === null || val === undefined) return;
-  const n = parseFloat(val);
-  if (isNaN(n)) return;
-  el.innerHTML = n.toFixed(dec) + (unit ? `<span class="mu">${unit}</span>` : '');
-}
+  // Inicialização dos Gráficos com Chart.js
+  const ctxTemp = document.getElementById('tempChart').getContext('2d');
+  const chartTemp = new Chart(ctxTemp, {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'Temperatura (°C)', data: [], borderColor: '#f0883e', tension: 0.3, spanGaps: true }] },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
 
-function render(d) {
-  document.getElementById('ts').textContent = "Atualizado: " + (d.timestamp_br || new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'}));
-  
-  const badge = document.getElementById('badge');
-  const abox = document.getElementById('abox');
-  
-  if (d.status === 'ALERTA') {
-    badge.textContent = '🟡 ALERTA';
-    badge.className = 'badge alerta';
-  } else {
-    badge.textContent = '🟢 NORMAL';
-    badge.className = 'badge';
-  }
-  abox.classList.remove('show', 'falha-rede');
+  const ctxTensao = document.getElementById('tensaoChart').getContext('2d');
+  const chartTensao = new Chart(ctxTensao, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Fase A (V)', data: [], borderColor: '#58a6ff', tension: 0.3 },
+        { label: 'Fase B (V)', data: [], borderColor: '#3fb950', tension: 0.3 },
+        { label: 'Fase C (V)', data: [], borderColor: '#f0883e', tension: 0.3 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
 
-  const el = d.eletrico;
-  if (el) {
-    set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A'); set('pa', el.potencia_a, 0, 'W');
-    set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
-    set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A'); set('pb', el.potencia_b, 0, 'W');
-    set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 2, 'kWh');
-    set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A'); set('pc', el.potencia_c, 0, 'W');
-    set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
-    set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1); set('fpm', el.falha, 0);
+  const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
+  const chartCorrente = new Chart(ctxCorrente, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Fase A (A)', data: [], borderColor: '#58a6ff', tension: 0.3 },
+        { label: 'Fase B (A)', data: [], borderColor: '#3fb950', tension: 0.3 },
+        { label: 'Fase C (A)', data: [], borderColor: '#f0883e', tension: 0.3 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+
+  // Função para alternar o período de um gráfico específico
+  function mudarPeriodo(tipo, qtdPontos, btnEl) {
+    limites[tipo] = qtdPontos;
     
-    if (d.alertas && d.alertas.length > 0) {
-      abox.classList.add('show');
-      document.getElementById('alist').innerHTML = d.alertas.map(a => `<div class="ai">${a.replace(/\*/g, '')}</div>`).join('');
-    }
-    
-    // Adiciona ao gráfico a elétrica e o termostato na mesma rodada
-    adicPontoHistorico(el, d.temperatura, d.timestamp_br);
+    // Atualiza classes ativas dos botões daquele grupo
+    const grupo = btnEl.parentElement.querySelectorAll('.c-btn');
+    grupo.forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+
+    // Re-renderiza os gráficos com o novo corte de dados
+    renderizarGraficosComFiltro();
   }
 
-  // --- LEITURA DA TEMPERATURA ---
-  const term = d.temperatura;
-  if (term) {
-    const tvalEl = document.getElementById('tval');
-    const gfillEl = document.getElementById('gfill');
-    const ael = document.getElementById('alarme');
-    const debugBox = document.getElementById('debug_box');
+  function renderizarGraficosComFiltro() {
+    if (historico.length === 0) return;
 
-    // Identificação do estado do ventilador/switch
-    const ficon = document.getElementById('ficon');
-    const fbadge = document.getElementById('fbadge');
-    let refrigLigada = false;
-    
-    if (term.debug_todos_codigos && Array.isArray(term.debug_todos_codigos)) {
-        const switchCode = term.debug_todos_codigos.find(c => c.code === 'switch');
-        if (switchCode && switchCode.value === true) {
-            refrigLigada = true;
-        }
-    }
+    // Aplica o slice respectivo de cada gráfico
+    const dadosTemp = historico.slice(-limites.temp);
+    chartTemp.data.labels = dadosTemp.map(p => p.hora);
+    chartTemp.data.datasets[0].data = dadosTemp.map(p => p.temp);
+    chartTemp.update();
 
-    if (refrigLigada) {
-        ficon.classList.add('spin');
-        fbadge.textContent = 'REFRIGERAÇÃO ON';
-        fbadge.className = 'fbadge';
+    const dadosTensao = historico.slice(-limites.tensao);
+    chartTensao.data.labels = dadosTensao.map(p => p.hora);
+    chartTensao.data.datasets[0].data = dadosTensao.map(p => p.va);
+    chartTensao.data.datasets[1].data = dadosTensao.map(p => p.vb);
+    chartTensao.data.datasets[2].data = dadosTensao.map(p => p.vc);
+    chartTensao.update();
+
+    const dadosCorrente = historico.slice(-limites.corrente);
+    chartCorrente.data.labels = dadosCorrente.map(p => p.hora);
+    chartCorrente.data.datasets[0].data = dadosCorrente.map(p => p.ia);
+    chartCorrente.data.datasets[1].data = dadosCorrente.map(p => p.ib);
+    chartCorrente.data.datasets[2].data = dadosCorrente.map(p => p.ic);
+    chartCorrente.update();
+  }
+
+  function set(id, val, dec = 1, unit = '') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (val !== null && val !== undefined) {
+      el.innerHTML = `${Number(val).toFixed(dec)}<span class="mu">${unit}</span>`;
     } else {
-        ficon.classList.remove('spin');
-        fbadge.textContent = 'REFRIGERAÇÃO OFF';
-        fbadge.className = 'fbadge off';
+      el.innerHTML = `--<span class="mu">${unit}</span>`;
     }
+  }
 
-    // Processamento da temperatura numérica
-    if (term.temp_atual !== undefined && term.temp_atual !== null) {
-      const temp = parseFloat(term.temp_atual);
-      tvalEl.innerHTML = temp.toFixed(1) + '<span>°C</span>';
-      
-      // Muda a cor do número se ficar muito quente
-      tvalEl.className = 'tnum' + (temp >= 50 ? ' critico' : temp >= 38 ? ' quente' : '');
-      
-      gfillEl.style.width = Math.min(100, (temp / 60) * 100) + '%';
-      ael.textContent = temp >= 43.0 ? 'Alerta Ativo' : 'Conectado';
-      ael.style.color = temp >= 43.0 ? '#f85149' : '#3fb950';
-      debugBox.style.display = 'none';
-    } else {
-      tvalEl.innerHTML = '--<span>°C</span>';
-      gfillEl.style.width = '0%';
-      ael.textContent = 'Sem Leitura';
-      ael.style.color = '#8b949e';
-
-      // Mostra debugs se a API devolver falha
-      if (term.debug_todos_codigos && Array.isArray(term.debug_todos_codigos)) {
-        debugBox.style.display = 'block';
-        debugBox.innerHTML = '<b>Códigos da Tuya:</b><br>' + 
-          term.debug_todos_codigos.map(i => `<code>${i.code}: ${i.value}</code>`).join(' | ');
-      }
+  function render(d) {
+    document.getElementById('ts').textContent = 'Atualizado: ' + (d.timestamp_br || '--');
+    const el = d.eletrico;
+    if (el) {
+      set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A'); set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
+      set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A'); set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 2, 'kWh');
+      set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A'); set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
+      set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1); set('fpm', el.falha, 0);
+    }
+    const temp = d.temperatura;
+    if (temp && temp.temp_atual !== null) {
+      document.getElementById('tval').innerHTML = `${temp.temp_atual}<span>°C</span>`;
+      document.getElementById('gfill').style.width = Math.min(100, (temp.temp_atual / 60) * 100) + '%';
     }
     document.getElementById('fmodo').textContent = d.banco_dados || 'OK';
-    document.getElementById('tset').textContent = d.timestamp_br ? d.timestamp_br.split(',')[1].trim() : '--';
+    document.getElementById('tset').textContent = '38.0°C';
   }
-}
 
-function dispararErro(msg) {
-    const abox = document.getElementById('abox');
-    abox.classList.add('show', 'falha-rede');
-    document.getElementById('atitle').textContent = '⚠️ ERRO DE COMUNICAÇÃO';
-    document.getElementById('alist').innerHTML = `<div class="ai" style="color:#f85149; font-weight:bold;">🚨 ${msg}</div>`;
-    const badge = document.getElementById('badge');
-    badge.textContent = '🔴 OFFLINE'; badge.className = 'badge offline';
-}
+  async function carregarHistorico() {
+    try {
+      const r = await fetch(API_HISTORICO);
+      if (!r.ok) return;
+      const data = await r.json();
+      historico = data.reverse().map(item => {
+        const h = new Date(item.created_at || item.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
+        return {
+          hora: h,
+          temp: item.temp_atual ? parseFloat(item.temp_atual) : null,
+          va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
+          ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
+        };
+      });
+      renderizarGraficosWithFilter();
+    } catch(e) {
+      console.error("Erro histórico:", e);
+    }
+  }
 
-async function atualizar() { 
-  try { 
-    const r = await fetch(API_URL);
-    if(!r.ok) throw new Error(`HTTP Erro: ${r.status}`);
-    const respostaAPI = await r.json();
-    render(respostaAPI);
-  } catch(e) { 
-    console.error("Falha no update:", e);
-    dispararErro(e.message);
-  } 
-}
+  function renderizarGraficosWithFilter() {
+    renderizarGraficosComFiltro();
+  }
 
-carregarHistorico();
-atualizar();
-setInterval(atualizar, 300000);
+  async function atualizar() {
+    try {
+      const r = await fetch(API_URL);
+      if (r.ok) {
+        const respostaAPI = await r.json();
+        render(respostaAPI);
+        ultimaAtualizacao = Date.now();
+      }
+    } catch(e) {
+      console.log('Falha na comunicação:', e);
+    }
+  }
 
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") carregarHistorico();
-});
+  carregarHistorico();
+  atualizar();
+  setInterval(atualizar, 300000);
 </script>
 </body>
 </html>
