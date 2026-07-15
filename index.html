@@ -8,7 +8,6 @@
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
-
   header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
   header h1{font-size:1.05rem;font-weight:600;color:#58a6ff}
   .hright{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -18,9 +17,7 @@
   .badge.offline{background:#3d1111;color:#f85149;border-color:#f85149}
   .badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-
   main{padding:18px 28px;max-width:1400px;margin:0 auto}
-
   .temp-card{background:linear-gradient(135deg,#1c2a3a,#162032);border:1px solid #1f6feb;border-radius:14px;padding:22px 26px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:20px;align-items:center}
   .tlabel{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
   .tnum{font-size:3.6rem;font-weight:700;line-height:1;color:#58a6ff}
@@ -29,30 +26,25 @@
   .tnum.critico{color:#f85149}
   .tsub{font-size:.75rem;color:#8b949e;margin-top:5px}
   .tsub b{color:#58a6ff}
-
   .gauge-wrap{display:flex;flex-direction:column;gap:5px}
   .gtitle{font-size:.7rem;color:#8b949e}
   .gbar{height:13px;background:#21262d;border-radius:7px;overflow:hidden}
   .gfill{height:100%;border-radius:7px;background:linear-gradient(90deg,#238636,#d29922,#f85149);transition:width .8s ease}
   .glabels{display:flex;justify-content:space-between;font-size:.65rem;color:#8b949e}
   .ginfo{display:flex;justify-content:space-between;margin-top:6px;font-size:.72rem;color:#8b949e}
-
   .fan-box{display:flex;flex-direction:column;align-items:center;gap:7px}
-  .ficon{font-size:2.6rem}
+  .ficon{font-size:2.6rem}  
   .ficon.spin{animation:spin 1s linear infinite}
   @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   .fbadge{font-size:.75rem;font-weight:600;padding:4px 14px;border-radius:20px;background:#1a4731;color:#3fb950;border:1px solid #238636}
   .fbadge.off{background:#21262d;color:#8b949e;border-color:#30363d}
   .fmodo{font-size:.68rem;color:#8b949e}
-
   .alertas-box{background:#2d1b00;border:1px solid #d29922;border-radius:12px;padding:13px 17px;margin-bottom:18px;display:none}
   .alertas-box.show{display:block}
   .alertas-box.falha-rede{border-color:#f85149;background:#2d1111;}
   .alertas-box h3{font-size:.8rem;color:#d29922;margin-bottom:5px}
   .alertas-box.falha-rede h3{color:#f85149;}
   .ai{font-size:.8rem;color:#f0883e;padding:2px 0}
-
-  /* TÍTULOS E BOTÕES DOS GRÁFICOS */
   .stitle{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:#8b949e;margin-bottom:11px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
   .stitle-left {display:flex;align-items:center;gap:7px;flex:1}
   .stitle-left::after{content:'';flex:1;height:1px;background:#21262d}
@@ -60,7 +52,6 @@
   .c-btn {background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:.62rem;font-weight:600;padding:2px 8px;border-radius:4px;cursor:pointer;transition:all .2s}
   .c-btn:hover {background:#30363d;color:#e6edf3}
   .c-btn.active {background:#1f6feb;color:#fff;border-color:#58a6ff}
-
   .fases{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:18px}
   .fc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px}
   .fc.fa {border-top:3px solid #58a6ff}
@@ -70,24 +61,19 @@
   .fc.fa .ftit{color:#58a6ff}
   .fc.fb .ftit{color:#3fb950}
   .fc.fc2 .ftit{color:#f0883e}
-
   .med{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid #21262d}
   .med:last-child{border-bottom:none}
   .mn{font-size:.72rem;color:#8b949e}
   .mv{font-size:.92rem;font-weight:600}
   .mu{font-size:.65rem;color:#8b949e;margin-left:2px}
-
   .totais{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
   .tc{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 16px}
   .tico{font-size:1.2rem;margin-bottom:3px}
   .tnome{font-size:.68rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
   .tval{font-size:1.45rem;font-weight:700}
   .tunit{font-size:.68rem;color:#8b949e}
-
   .chart-container {height: 250px; margin-bottom: 25px; background: #161b22; padding: 10px; border-radius: 10px; border: 1px solid #30363d;}
-  
   footer{text-align:center;font-size:.68rem;color:#484f58;padding:12px}
-
   @media(max-width:768px){
     main{padding:12px}
     .temp-card{grid-template-columns:1fr}
@@ -97,7 +83,6 @@
 </style>
 </head>
 <body>
-
 <header>
   <h1>⚡ Painel Elétrico — Monitor em Tempo Real - Brasileira Distribuidora de Frutas</h1>
   <div class="hright">
@@ -105,7 +90,6 @@
     <div class="badge" id="badge">🟢 NORMAL</div>
   </div>
 </header>
-
 <main>
   <div class="temp-card">
     <div>
@@ -113,7 +97,7 @@
       <div class="tnum" id="tval">--<span>°C</span></div>
       <div class="tsub">Setpoint ventilador: <b id="tset">--°C</b></div>
     </div>
-    <<div class="gauge-wrap">
+    <div class="gauge-wrap">
       <div class="gtitle">Nível de temperatura (0°C → <span id="tmax-label">60°C</span>)</div>
       <div class="gbar"><div class="gfill" id="gfill" style="width:0%"></div></div>
       <div class="glabels"><span>0°C</span><span id="gwarn-label" style="color:#d29922">--°C ⚠️</span><span style="color:#f85149">60°C 🔴</span></div>
@@ -123,7 +107,7 @@
       </div>
     </div>
     <div class="fan-box">
-      <div class="ficon" id="ficon">🌀</div>
+      <div class="ficon" id="ficon">🌀</div>  
       <div class="fbadge off" id="fbadge">VENTILADOR OFF</div>
       <div class="fmodo" id="fmodolab">--</div>
     </div>
@@ -140,7 +124,7 @@
       <div class="ftit">Fase A</div>
       <div class="med"><span class="mn">Tensão</span><span class="mv" id="va">--<span class="mu">V</span></span></div>
       <div class="med"><span class="mn">Corrente</span><span class="mv" id="ia">--<span class="mu">A</span></span></div>
-      <div class="med"><span class="mn">Potência</span><span class="mv" id="pa">--<span class="mu">W</span></span></div>
+      <div class="med"><span class="mn">Potência</span><span class="mv" id="pa">--<span class="mu">W</span></span></div>    
       <div class="med"><span class="mn">Fator Pot.</span><span class="mv" id="fpa">--</span></div>
       <div class="med"><span class="mn">Energia</span><span class="mv" id="ea">--<span class="mu">kWh</span></span></div>
     </div>
@@ -182,7 +166,7 @@
 
   <div class="stitle">
     <div class="stitle-left">📈 Tendência de Tensões (Volts)</div>
-    <div class="chart-btns">
+    <div class="chart-btns">  
       <button class="c-btn" onclick="mudarPeriodo('tensao', 144, this)">12h</button>
       <button class="c-btn" onclick="mudarPeriodo('tensao', 288, this)">24h</button>
       <button class="c-btn active" onclick="mudarPeriodo('tensao', 432, this)">36h</button>
@@ -200,25 +184,21 @@
   </div>
   <div class="chart-container"><canvas id="correnteChart"></canvas></div>
 </main>
-
 <footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
 
 <script>
   const TUYA_DEVICE_TERMOSTATO = 'eb825839a833c89c38oyfc';
   const API_URL = `https://painel-eletrico.vercel.app/api/dados?device_id=${TUYA_DEVICE_TERMOSTATO}`;
   const API_HISTORICO = `https://painel-eletrico.vercel.app/api/historico?device_id=${TUYA_DEVICE_TERMOSTATO}`;
-
   let historico = [];
   let ultimaAtualizacao = Date.now();
 
-  // Limites por gráfico (padrão em 432 = 36h)
   let limites = {
     temp: 432,
     tensao: 432,
     corrente: 432
   };
 
-  // Inicialização dos Gráficos com Chart.js
   const ctxTemp = document.getElementById('tempChart').getContext('2d');
   const chartTemp = new Chart(ctxTemp, {
     type: 'line',
@@ -235,7 +215,7 @@
         { label: 'Fase A (V)', data: [], borderColor: '#58a6ff', tension: 0.3 },
         { label: 'Fase B (V)', data: [], borderColor: '#3fb950', tension: 0.3 },
         { label: 'Fase C (V)', data: [], borderColor: '#f0883e', tension: 0.3 }
-      ]
+      ]    
     },
     options: { responsive: true, maintainAspectRatio: false }
   });
@@ -250,27 +230,20 @@
         { label: 'Fase B (A)', data: [], borderColor: '#3fb950', tension: 0.3 },
         { label: 'Fase C (A)', data: [], borderColor: '#f0883e', tension: 0.3 }
       ]
-    },
+    },    
     options: { responsive: true, maintainAspectRatio: false }
   });
 
-  // Função para alternar o período de um gráfico específico
   function mudarPeriodo(tipo, qtdPontos, btnEl) {
     limites[tipo] = qtdPontos;
-    
-    // Atualiza classes ativas dos botões daquele grupo
     const grupo = btnEl.parentElement.querySelectorAll('.c-btn');
     grupo.forEach(b => b.classList.remove('active'));
     btnEl.classList.add('active');
-
-    // Re-renderiza os gráficos com o novo corte de dados
     renderizarGraficosComFiltro();
   }
 
   function renderizarGraficosComFiltro() {
     if (historico.length === 0) return;
-
-    // Aplica o slice respectivo de cada gráfico
     const dadosTemp = historico.slice(-limites.temp);
     chartTemp.data.labels = dadosTemp.map(p => p.hora);
     chartTemp.data.datasets[0].data = dadosTemp.map(p => p.temp);
@@ -303,36 +276,54 @@
 
   function render(d) {
     document.getElementById('ts').textContent = 'Atualizado: ' + (d.timestamp_br || '--');
+    
+    const badge = document.getElementById('badge');
+    const abox = document.getElementById('abox');
+
+    if (d.status === 'ALERTA') {
+      badge.textContent = '🟡 ALERTA';
+      badge.className = 'badge alerta';
+      abox.classList.add('show');
+      if (d.alertas && d.alertas.length > 0) {
+        document.getElementById('alist').innerHTML = d.alertas.map(a => `<div class="ai">${a.replace(/\*/g, '')}</div>`).join('');
+      }
+    } else {
+      badge.textContent = '🟢 NORMAL';
+      badge.className = 'badge';
+      abox.classList.remove('show');
+    }
+
     const el = d.eletrico;
     if (el) {
-      set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A'); set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
-      set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A'); set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 2, 'kWh');
-      set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A'); set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
-      set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1); set('fpm', el.falha, 0);
+      set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A');
+      set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
+      set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A');
+      set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 2, 'kWh');
+      set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A');
+      set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
+      set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1);
+      set('fpm', el.falha, 0);
     }
-  const temp = d.temperatura;
+    
+    const temp = d.temperatura;
     if (temp) {
       if (temp.temp_atual !== null && temp.temp_atual !== undefined) {
         document.getElementById('tval').innerHTML = `${temp.temp_atual}<span>°C</span>`;
-        
-        // Pega a temperatura atual e o setpoint dinâmico (se não houver setpoint, usa 38 como segurança)
         const tAtual = parseFloat(temp.temp_atual);
-        const tSet = temp.temp_set ? parseFloat(temp.temp_set) : 38.0;
-        
-        // Define o limite máximo da barra proporcional ao setpoint (ex: setpoint + 22°C, com teto mínimo de 60°C)
+        const tSet = temp.temp_set ? parseFloat(temp.temp_set) : 38.0;                
         const tMax = Math.max(60, tSet + 22);
         
-        // Atualiza a largura da barra baseada no novo teto dinâmico
         document.getElementById('gfill').style.width = Math.min(100, (tAtual / tMax) * 100) + '%';
         document.getElementById('tmax-label').textContent = `${tMax.toFixed(0)}°C`;
-      }
-      
+      }            
       if (temp.temp_set !== null && temp.temp_set !== undefined) {
         document.getElementById('tset').textContent = `${temp.temp_set}°C`;
-        // Atualiza o aviso amarelo na barra para o valor exato do setpoint do equipamento
         document.getElementById('gwarn-label').textContent = `${temp.temp_set}°C ⚠️`;
       }
     }
+    
+    document.getElementById('fmodo').textContent = d.banco_dados || '--';
+  }
 
   async function carregarHistorico() {
     try {
@@ -345,7 +336,7 @@
           hora: h,
           temp: item.temp_atual ? parseFloat(item.temp_atual) : null,
           va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
-          ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
+          ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c   
         };
       });
       renderizarGraficosWithFilter();
