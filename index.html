@@ -275,24 +275,11 @@
     
     const badge = document.getElementById('badge');
     const abox = document.getElementById('abox');
-    const el = d.eletrico;
 
-    // --- LÓGICA DE ALARMES VISUAIS (Restaurado para o seu limite de 139V) ---
+    // --- EXIBIÇÃO DE ALERTAS CENTRALIZADA (Usa exclusivamente a regra do Backend) ---
     let alertasNaTela = [];
-    if (el) {
-      const fases = [{n: 'Fase A', v: el.tensao_a}, {n: 'Fase B', v: el.tensao_b}, {n: 'Fase C', v: el.tensao_c}];
-      fases.forEach(f => {
-        if (f.v > 139) alertasNaTela.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 139 V`);
-        else if (f.v < 111 && f.v > 0) alertasNaTela.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
-      });
-    }
-
-    // Mescla com os alertas vindos da API (Telegram)
     if (d.alertas && d.alertas.length > 0) {
-      d.alertas.forEach(a => {
-        let limpo = `🚨 ` + a.replace(/\*/g, '');
-        if (!alertasNaTela.includes(limpo)) alertasNaTela.push(limpo);
-      });
+      alertasNaTela = d.alertas.map(a => `🚨 ` + a.replace(/\*/g, ''));
     }
 
     if (alertasNaTela.length > 0 || d.status === 'ALERTA') {
@@ -307,6 +294,7 @@
     }
 
     // --- PREENCHIMENTO ELÉTRICO ---
+    const el = d.eletrico;
     if (el) {
       set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A');
       set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
@@ -318,7 +306,7 @@
       set('fpm', el.falha, 0);
     }
     
-    // --- LÓGICA DO TERMOSTATO E VENTILADOR À PROVA DE FALHAS ---
+    // --- LÓGICA DO TERMOSTATO E VENTILADOR ---
     const temp = d.temperatura;
     if (temp) {
       const tAtual = temp.temp_atual !== null ? parseFloat(temp.temp_atual) : 0;
@@ -338,7 +326,6 @@
         document.getElementById('gwarn-label').textContent = `${temp.temp_set}°C ⚠️`;
       }
 
-      // Calcula o status do ventilador aqui no frontend para garantir funcionamento imediato
       let ventLigado = false;
       if (temp.ventilador_ligado !== undefined) {
           ventLigado = temp.ventilador_ligado;
