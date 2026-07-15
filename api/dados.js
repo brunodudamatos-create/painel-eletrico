@@ -82,6 +82,33 @@ export default async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
+    // --- 1.1 COLETA DE DADOS DO TERMOSTATO (Adicionar) ---
+const tTermo = Date.now().toString();
+const urlShadowTermo = `/v2.0/cloud/thing/${process.env.TUYA_DEVICE_TERMOSTATO}/shadow/properties`;
+const resTermo = await fetch(`${BASE_URL}${urlShadowTermo}`, {
+  headers: { 
+    client_id: CLIENT_ID, 
+    access_token: token, 
+    sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, tTermo, 'GET', urlShadowTermo, token), 
+    t: tTermo, 
+    sign_method: 'HMAC-SHA256' 
+  }
+});
+const dataTermo = await resTermo.json();
+const propsTermo = dataTermo.result?.properties || [];
+
+// Extração dos valores (convertendo o formato da Tuya dividido por 10)
+const tempAtualVal = dpShadow(propsTermo, 'temp_current') != null ? dpShadow(propsTermo, 'temp_current') / 10 : null;
+const tempSetVal = dpShadow(propsTermo, 'temp_set') != null ? dpShadow(propsTermo, 'temp_set') / 10 : null;
+
+// Lógica inteligente: se a temperatura atual for maior que o setpoint, o ventilador/saída liga
+const ventiladorLigado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
+
+const temperatura = {
+  temp_atual: tempAtualVal !== null ? tempAtualVal.toFixed(1) : null,
+  temp_set: tempSetVal !== null ? tempSetVal.toFixed(1) : null,
+  ventilador_ligado: ventiladorLigado
+};
     // 2. Coleta do Termostato
     let temperatura = { temp_atual: null, temp_set: null, debug_todos_codigos: [] };
     if (DEVICE_ID_TERMOSTATO) {
