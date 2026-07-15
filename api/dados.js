@@ -119,6 +119,7 @@ export default async function handler(req, res) {
         temperatura.debug_todos_codigos = [{ erro: e.message }];
       }
     }
+
     // 3. GRAVAÇÃO NO BANCO DE DADOS (Restaurada e com temp_atual)
     let bancoStatus = "Não gravado";
     try {
@@ -153,11 +154,95 @@ export default async function handler(req, res) {
       bancoStatus = "Erro Supabase: " + dbErr.message;
     }
 
-    // 4. Alarmes
+    // 4. Lógica de Alarmes Completos (Tensões e Correntes)
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
-    if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
+    const tb = parseFloat(eletrico.tensao_b);
+    const tc = parseFloat(eletrico.tensao_c);
+    const ia = parseFloat(eletrico.corrente_a);
+    const ib = parseFloat(eletrico.corrente_b);
+    const ic = parseFloat(eletrico.corrente_c);
 
+    // Limites de Tensão
+    if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
+    if (ta < 111 && ta > 0) alertas.push(`*Fase A:* Baixa tensão (${ta}V)`);
+    if (tb > 139) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
+    if (tb < 111 && tb > 0) alertas.push(`*Fase B:* Baixa tensão (${tb}V)`);
+    if (tc > 139) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
+    if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
+
+    // Limites de Corrente (Configurado para 50A)
+    const LIMITE_CORRENTE = 50.0;
+    if (ia > LIMITE_CORRENTE) alertas.push(`*Fase A:* Alta corrente (${ia}A)`);
+    if (ib > LIMITE_CORRENTE) alertas.push(`*Fase B:* Alta corrente (${ib}A)`);
+    if (ic > LIMITE_CORRENTE) alertas.push(`*Fase C:* Alta corrente (${ic}A)`);
+
+    // 5. Controle do Telegram e Supabase (status_alarmes)
+    let deveEnviarTelegram = false;
+    let textoMensagem = '';
+
+    const { data: estadoAnterior } = await supabase
+      .from('status_alarmes')
+      .select('*')
+      .eq('id', 'painel_brasileira')
+      .maybeSingle();
+
+    const agora = new Date();
+    let novoEstado = {
+      em_alerta: alertas.length > 0,
+      primeiro_alerta_at: estadoAnterior?.primeiro_alerta_at || null,
+      ultimo_alerta_at: estadoAnterior?.ultimo_alerta_at || null,
+      estagio: estadoAnterior?.estagio || 0,
+      texto_alertas: alertas.join('\n')
+    };
+
+    if (alertas.length > 0) {
+      if (!estadoAnterior?.em_alerta) {
+        deveEnviarTelegram = true;
+        textoMensagem = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+        novoEstado.primeiro_alerta_at = agora.toISOString();
+        novoEstado.ultimo_alerta_at = agora.toISOString();
+        novoEstado.estagio = 1;
+      } else {
+        const primeiroAlerta = new Date(estadoAnterior.primeiro_alerta_at);
+        const ultimoAlerta = new Date(estadoAnterior.ultimo_alerta_at);
+        const diffHorasDesdePrimeiro = (agora - primeiroAlerta) / (1000 * 60 * 60);
+        const diffHorasDesdeUltimo = (agora - ultimoAlerta) / (1000 * 60 * 60);
+
+        if (novoEstado.estagio === 1 && diffHorasDesdePrimeiro >= 1) {
+          deveEnviarTelegram = true;
+          textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+          novoEstado.ultimo_alerta_at = agora.toISOString();
+          novoEstado.estagio = 2;
+        } else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
+          deveEnviarTelegram = true;
+          textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+          novoEstado.ultimo_alerta_at = agora.toISOString();
+        }
+      }
+    } else {
+      if (estadoAnterior?.em_alerta) {
+        deveEnviarTelegram = true;
+        textoMensagem = `✅ *SISTEMA NORMALIZADO*\n_Painel: Brasileira Distribuidora_\n\nAs grandezas elétricas retornaram aos níveis operacionais normais.`;
+        novoEstado.primeiro_alerta_at = null;
+        novoEstado.ultimo_alerta_at = null;
+        novoEstado.estagio = 0;
+      }
+    }
+
+    // Atualiza/Cria o registro do estado do alarme no BD
+    if (estadoAnterior) {
+      await supabase.from('status_alarmes').update(novoEstado).eq('id', 'painel_brasileira');
+    } else {
+      await supabase.from('status_alarmes').insert([{ id: 'painel_brasileira', ...novoEstado }]);
+    }
+
+    // Dispara o Telegram se as condições forem atendidas
+    if (deveEnviarTelegram) {
+      await enviarAlertaTelegram(textoMensagem);
+    }
+
+    // 6. Retorno da API para o Dashboard
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
       status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
