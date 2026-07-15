@@ -9,6 +9,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 async function enviarAlertaTelegram(mensagem) {
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+  if (!BOT_TOKEN || !CHAT_ID) return;
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
   try {
     await fetch(url, {
@@ -82,35 +83,8 @@ export default async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // --- 1.1 COLETA DE DADOS DO TERMOSTATO (Adicionar) ---
-const tTermo = Date.now().toString();
-const urlShadowTermo = `/v2.0/cloud/thing/${process.env.TUYA_DEVICE_TERMOSTATO}/shadow/properties`;
-const resTermo = await fetch(`${BASE_URL}${urlShadowTermo}`, {
-  headers: { 
-    client_id: CLIENT_ID, 
-    access_token: token, 
-    sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, tTermo, 'GET', urlShadowTermo, token), 
-    t: tTermo, 
-    sign_method: 'HMAC-SHA256' 
-  }
-});
-const dataTermo = await resTermo.json();
-const propsTermo = dataTermo.result?.properties || [];
-
-// Extração dos valores (convertendo o formato da Tuya dividido por 10)
-const tempAtualVal = dpShadow(propsTermo, 'temp_current') != null ? dpShadow(propsTermo, 'temp_current') / 10 : null;
-const tempSetVal = dpShadow(propsTermo, 'temp_set') != null ? dpShadow(propsTermo, 'temp_set') / 10 : null;
-
-// Lógica inteligente: se a temperatura atual for maior que o setpoint, o ventilador/saída liga
-const ventiladorLigado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
-
-const temperatura = {
-  temp_atual: tempAtualVal !== null ? tempAtualVal.toFixed(1) : null,
-  temp_set: tempSetVal !== null ? tempSetVal.toFixed(1) : null,
-  ventilador_ligado: ventiladorLigado
-};
-    // 2. Coleta do Termostato
-    let temperatura = { temp_atual: null, temp_set: null, debug_todos_codigos: [] };
+    // 2. Coleta do Termostato e Lógica Inteligente
+    let temperatura = { temp_atual: null, temp_set: null, ventilador_ligado: false, debug_todos_codigos: [] };
     if (DEVICE_ID_TERMOSTATO) {
       try {
         const t3 = Date.now().toString();
@@ -121,24 +95,19 @@ const temperatura = {
         const dataTermo = await resTermo.json();
 
         if (dataTermo.result && Array.isArray(dataTermo.result)) {
-          temperatura.debug_todos_codigos = dataTermo.result.map(item => ({
-            code: item.code,
-            value: item.value
-          }));
-
-          // Lê a temperatura real (temp_current)
+          temperatura.debug_todos_codigos = dataTermo.result.map(item => ({ code: item.code, value: item.value }));
+          
           const itemTemp = dataTermo.result.find(i => i.code === 'temp_current');
-          if (itemTemp && itemTemp.value != null) {
-            let val = itemTemp.value;
-            temperatura.temp_atual = (val > 100 ? val / 10 : Number(val)).toFixed(1);
-          }
-
-          // Lê o Setpoint do termostato (temp_set)
           const itemSet = dataTermo.result.find(i => i.code === 'temp_set');
-          if (itemSet && itemSet.value != null) {
-            let val = itemSet.value;
-            temperatura.temp_set = (val > 100 ? val / 10 : Number(val)).toFixed(1);
-          }
+          
+          const tempAtualVal = (itemTemp && itemTemp.value != null) ? (itemTemp.value > 100 ? itemTemp.value / 10 : Number(itemTemp.value)) : null;
+          const tempSetVal = (itemSet && itemSet.value != null) ? (itemSet.value > 100 ? itemSet.value / 10 : Number(itemSet.value)) : null;
+
+          temperatura.temp_atual = tempAtualVal !== null ? tempAtualVal.toFixed(1) : null;
+          temperatura.temp_set = tempSetVal !== null ? tempSetVal.toFixed(1) : null;
+          
+          // Lógica inteligente: se a temperatura atual for maior que o setpoint, o ventilador está ligado
+          temperatura.ventilador_ligado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
         } else {
           temperatura.debug_todos_codigos = dataTermo;
         }
@@ -146,7 +115,8 @@ const temperatura = {
         temperatura.debug_todos_codigos = [{ erro: e.message }];
       }
     }
-    // 3. GRAVAÇÃO NO BANCO DE DADOS (Restaurada e com temp_atual)
+
+    // 3. GRAVAÇÃO NO BANCO DE DADOS (Mantida a estrutura funcional)
     let bancoStatus = "Não gravado";
     try {
       const { error: dbError } = await supabase
@@ -170,9 +140,8 @@ const temperatura = {
           energia_total: eletrico.energia_total,
           potencia_total: eletrico.potencia_total,
           frequencia: eletrico.frequencia,
-          temp_atual: temperatura.temp_atual // Gravando a temperatura no BD!
+          temp_atual: temperatura.temp_atual
         }]);
-      
       if (dbError) throw dbError;
       bancoStatus = "Gravação Sucesso";
     } catch (dbErr) {
@@ -180,10 +149,80 @@ const temperatura = {
       bancoStatus = "Erro Supabase: " + dbErr.message;
     }
 
-    // 4. Alarmes
+    // 4. LÓGICA DE ALARMES COMPLETOS (Restaurada)
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
+    const tb = parseFloat(eletrico.tensao_b);
+    const tc = parseFloat(eletrico.tensao_c);
+
     if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
+    if (ta < 111 && ta > 0) alertas.push(`*Fase A:* Baixa tensão (${ta}V)`);
+    if (tb > 139) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
+    if (tb < 111 && tb > 0) alertas.push(`*Fase B:* Baixa tensão (${tb}V)`);
+    if (tc > 139) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
+    if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
+
+    // 5. INTEGRAÇÃO TELEGRAM E SUPABASE (STATUS DE ALARMES) - Restaurada
+    let deveEnviarTelegram = false;
+    let textoMensagem = '';
+    const { data: estadoAnterior } = await supabase
+      .from('status_alarmes')
+      .select('*')
+      .eq('id', 'painel_brasileira')
+      .maybeSingle();
+
+    const agora = new Date();
+    let novoEstado = {
+      em_alerta: alertas.length > 0,
+      primeiro_alerta_at: estadoAnterior?.primeiro_alerta_at || null,
+      ultimo_alerta_at: estadoAnterior?.ultimo_alerta_at || null,
+      estagio: estadoAnterior?.estagio || 0,
+      texto_alertas: alertas.join('\n')
+    };
+
+    if (alertas.length > 0) {
+      if (!estadoAnterior?.em_alerta) {
+        deveEnviarTelegram = true;
+        textoMensagem = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+        novoEstado.primeiro_alerta_at = agora.toISOString();
+        novoEstado.ultimo_alerta_at = agora.toISOString();
+        novoEstado.estagio = 1;
+      } else {
+        const primeiroAlerta = new Date(estadoAnterior.primeiro_alerta_at);
+        const ultimoAlerta = new Date(estadoAnterior.ultimo_alerta_at);
+        const diffHorasDesdePrimeiro = (agora - primeiroAlerta) / (1000 * 60 * 60);
+        const diffHorasDesdeUltimo = (agora - ultimoAlerta) / (1000 * 60 * 60);
+
+        if (novoEstado.estagio === 1 && diffHorasDesdePrimeiro >= 1) {
+          deveEnviarTelegram = true;
+          textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+          novoEstado.ultimo_alerta_at = agora.toISOString();
+          novoEstado.estagio = 2;
+        } else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
+          deveEnviarTelegram = true;
+          textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+          novoEstado.ultimo_alerta_at = agora.toISOString();
+        }
+      }
+    } else {
+      if (estadoAnterior?.em_alerta) {
+        deveEnviarTelegram = true;
+        textoMensagem = `✅ *SISTEMA NORMALIZADO*\n_Painel: Brasileira Distribuidora_\n\nAs grandezas elétricas retornaram aos níveis operacionais normais.`;
+        novoEstado.primeiro_alerta_at = null;
+        novoEstado.ultimo_alerta_at = null;
+        novoEstado.estagio = 0;
+      }
+    }
+
+    if (estadoAnterior) {
+      await supabase.from('status_alarmes').update(novoEstado).eq('id', 'painel_brasileira');
+    } else {
+      await supabase.from('status_alarmes').insert([{ id: 'painel_brasileira', ...novoEstado }]);
+    }
+
+    if (deveEnviarTelegram) {
+      await enviarAlertaTelegram(textoMensagem);
+    }
 
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
@@ -193,7 +232,6 @@ const temperatura = {
       temperatura,
       banco_dados: bancoStatus
     });
-
   } catch (err) {
     return res.status(500).json({ erro: err.message });
   }
