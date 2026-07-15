@@ -275,22 +275,38 @@
     
     const badge = document.getElementById('badge');
     const abox = document.getElementById('abox');
+    const el = d.eletrico;
 
-    // Mapeamento e exibição dos Alertas sincronizados com o Backend
-    if (d.status === 'ALERTA') {
+    // --- LÓGICA DE ALARMES VISUAIS (Restaurado para o seu limite de 133V) ---
+    let alertasNaTela = [];
+    if (el) {
+      const fases = [{n: 'Fase A', v: el.tensao_a}, {n: 'Fase B', v: el.tensao_b}, {n: 'Fase C', v: el.tensao_c}];
+      fases.forEach(f => {
+        if (f.v > 133) alertasNaTela.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 133 V`);
+        else if (f.v < 111 && f.v > 0) alertasNaTela.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
+      });
+    }
+
+    // Mescla com os alertas vindos da API (Telegram)
+    if (d.alertas && d.alertas.length > 0) {
+      d.alertas.forEach(a => {
+        let limpo = `🚨 ` + a.replace(/\*/g, '');
+        if (!alertasNaTela.includes(limpo)) alertasNaTela.push(limpo);
+      });
+    }
+
+    if (alertasNaTela.length > 0 || d.status === 'ALERTA') {
       badge.textContent = '🟡 ALERTA';
       badge.className = 'badge alerta';
       abox.classList.add('show');
-      if (d.alertas && d.alertas.length > 0) {
-        document.getElementById('alist').innerHTML = d.alertas.map(a => `<div class="ai">${a.replace(/\*/g, '')}</div>`).join('');
-      }
+      document.getElementById('alist').innerHTML = alertasNaTela.map(a => `<div class="ai">${a}</div>`).join('');
     } else {
       badge.textContent = '🟢 NORMAL';
       badge.className = 'badge';
       abox.classList.remove('show');
     }
 
-    const el = d.eletrico;
+    // --- PREENCHIMENTO ELÉTRICO ---
     if (el) {
       set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A');
       set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
@@ -302,37 +318,47 @@
       set('fpm', el.falha, 0);
     }
     
+    // --- LÓGICA DO TERMOSTATO E VENTILADOR À PROVA DE FALHAS ---
     const temp = d.temperatura;
     if (temp) {
-      // 1. Atualiza Temperatura Visual
-      if (temp.temp_atual !== null && temp.temp_atual !== undefined) {
-        document.getElementById('tval').innerHTML = `${temp.temp_atual}<span>°C</span>`;
-        const tAtual = parseFloat(temp.temp_atual);
-        const tSet = temp.temp_set ? parseFloat(temp.temp_set) : 38.0;                
+      const tAtual = temp.temp_atual !== null ? parseFloat(temp.temp_atual) : 0;
+      const tSet = temp.temp_set !== null ? parseFloat(temp.temp_set) : 38.0; 
+
+      if (temp.temp_atual !== null) {
+        const tval = document.getElementById('tval');
+        tval.innerHTML = `${temp.temp_atual}<span>°C</span>`;
+        tval.className = 'tnum' + (tAtual >= 50 ? ' critico' : tAtual >= 38 ? ' quente' : '');
+        
         const tMax = Math.max(60, tSet + 22);
         document.getElementById('gfill').style.width = Math.min(100, (tAtual / tMax) * 100) + '%';
         document.getElementById('tmax-label').textContent = `${tMax.toFixed(0)}°C`;
       }            
-      // 2. Atualiza Setpoint
-      if (temp.temp_set !== null && temp.temp_set !== undefined) {
+      if (temp.temp_set !== null) {
         document.getElementById('tset').textContent = `${temp.temp_set}°C`;
         document.getElementById('gwarn-label').textContent = `${temp.temp_set}°C ⚠️`;
       }
 
-      // 3. Lê a variável "ventilador_ligado" com a Lógica Inteligente (calculada no Backend)
+      // Calcula o status do ventilador aqui no frontend para garantir funcionamento imediato
+      let ventLigado = false;
+      if (temp.ventilador_ligado !== undefined) {
+          ventLigado = temp.ventilador_ligado;
+      } else {
+          ventLigado = (tAtual > tSet);
+      }
+
       const fi = document.getElementById('ficon');
       const fb = document.getElementById('fbadge');
-      if (temp.ventilador_ligado === true) {
+      if (ventLigado) {
         if (fi) fi.classList.add('spin');
         if (fb) {
           fb.textContent = 'VENTILADOR ON';
-          fb.className = 'fbadge'; // Aplica o estilo verde
+          fb.className = 'fbadge'; 
         }
       } else {
         if (fi) fi.classList.remove('spin');
         if (fb) {
           fb.textContent = 'VENTILADOR OFF';
-          fb.className = 'fbadge off'; // Retorna para cinza
+          fb.className = 'fbadge off'; 
         }
       }
     }
