@@ -277,12 +277,12 @@
     const abox = document.getElementById('abox');
     const el = d.eletrico;
 
-    // --- LÓGICA DE ALARMES VISUAIS (Restaurado para o seu limite de 133V) ---
+    // --- LÓGICA DE ALARMES VISUAIS (Restaurado para o seu limite de 139V) ---
     let alertasNaTela = [];
     if (el) {
       const fases = [{n: 'Fase A', v: el.tensao_a}, {n: 'Fase B', v: el.tensao_b}, {n: 'Fase C', v: el.tensao_c}];
       fases.forEach(f => {
-        if (f.v > 133) alertasNaTela.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 133 V`);
+        if (f.v > 139) alertasNaTela.push(`🚨 ${f.n}: ${f.v}V - Tensão acima de 139 V`);
         else if (f.v < 111 && f.v > 0) alertasNaTela.push(`🚨 ${f.n}: ${f.v}V - Tensão abaixo de 111 V`);
       });
     }
