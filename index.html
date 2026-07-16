@@ -384,6 +384,7 @@
         const respostaAPI = await r.json();
         render(respostaAPI);
         ultimaAtualizacao = Date.now();
+       carregarHistorico();
       }
     } catch(e) {
       console.log('Falha na comunicação:', e);
