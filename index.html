@@ -386,9 +386,17 @@
     }
   }
 
+ async function atualizarGeral() {
+    await atualizar();
+    await carregarHistorico(); // Atualiza também os gráficos periodicamente
+  }
+
+  // Executa ao carregar a página
   carregarHistorico();
   atualizar();
-  setInterval(atualizar, 300000);
+
+  // Atualiza a cada 30 segundos (30000 ms) em vez de 5 minutos
+  setInterval(atualizarGeral, 30000);
 </script>
 </body>
 </html>
