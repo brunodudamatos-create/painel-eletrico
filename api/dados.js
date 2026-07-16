@@ -1,5 +1,5 @@
 // ================================================================
-// api/dados.js - VERSÃO COMPLETA CORRIGIDA (DADOS + HISTÓRICO + ALERTAS)
+// api/dados.js - VERSÃO COM A TABELA CORRETA (telemetria_eletrica)
 // ================================================================
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -35,15 +35,17 @@ function dpShadow(props, codigo) {
 }
 
 export default async function handler(req, res) {
+  // Evita cache na Vercel
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
   const CLIENT_ID = process.env.TUYA_CLIENT_ID;
   const CLIENT_SECRET = process.env.TUYA_CLIENT_SECRET;
   const DEVICE_ID_MEDIDOR = process.env.TUYA_DEVICE_MEDIDOR;
   const DEVICE_ID_TERMOSTATO = process.env.TUYA_DEVICE_TERMOSTATO;
   const BASE_URL = 'https://openapi.tuyaus.com';
-  const LIMITE_TENSAO = 139; // Definido o limite centralizado
+  const LIMITE_TENSAO = 139; 
 
   try {
     const t1 = Date.now().toString();
@@ -102,22 +104,40 @@ export default async function handler(req, res) {
       temperatura.ventilador_ligado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
     }
 
-    // 3. GRAVAÇÃO NO HISTÓRICO DO SUPABASE (Restaurado para alimentar os gráficos)
+    // 3. GRAVAÇÃO NO SUPABASE - CORRIGIDO PARA telemetria_eletrica
+    let bancoStatus = "Não gravado";
     try {
-      await supabase.from('historico').insert([{
-        tensao_a: eletrico.tensao_a ? parseFloat(eletrico.tensao_a) : null,
-        tensao_b: eletrico.tensao_b ? parseFloat(eletrico.tensao_b) : null,
-        tensao_c: eletrico.tensao_c ? parseFloat(eletrico.tensao_c) : null,
-        corrente_a: eletrico.corrente_a ? parseFloat(eletrico.corrente_a) : null,
-        corrente_b: eletrico.corrente_b ? parseFloat(eletrico.corrente_b) : null,
-        corrente_c: eletrico.corrente_c ? parseFloat(eletrico.corrente_c) : null,
-        temp_atual: temperatura.temp_atual ? parseFloat(temperatura.temp_atual) : null
-      }]);
-    } catch (dbError) {
-      console.error("Erro ao salvar histórico no Supabase:", dbError);
+      const { error: dbError } = await supabase
+        .from('telemetria_eletrica')
+        .insert([{
+          tensao_a: eletrico.tensao_a,
+          corrente_a: eletrico.corrente_a,
+          potencia_a: eletrico.potencia_a,
+          fat_pot_a: eletrico.fat_pot_a,
+          energia_a: eletrico.energia_a,
+          tensao_b: eletrico.tensao_b,
+          corrente_b: eletrico.corrente_b,
+          potencia_b: eletrico.potencia_b,
+          fat_pot_b: eletrico.fat_pot_b,
+          energia_b: eletrico.energia_b,
+          tensao_c: eletrico.tensao_c,
+          corrente_c: eletrico.corrente_c,
+          potencia_c: eletrico.potencia_c,
+          fat_pot_c: eletrico.fat_pot_c,
+          energia_c: eletrico.energia_c,
+          energia_total: eletrico.energia_total,
+          potencia_total: eletrico.potencia_total,
+          frequencia: eletrico.frequencia,
+          temp_atual: temperatura.temp_atual
+        }]);
+      if (dbError) throw dbError;
+      bancoStatus = "Gravação Sucesso";
+    } catch (dbErr) {
+      console.error("Erro Supabase:", dbErr);
+      bancoStatus = "Erro Supabase: " + dbErr.message;
     }
 
-    // 4. LÓGICA DE ALARMES FORMATADOS
+    // 4. LÓGICA DE ALARMES
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
@@ -179,7 +199,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
       status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
-      alertas, eletrico, temperatura, banco_dados: "OK"
+      alertas, eletrico, temperatura, banco_dados: bancoStatus
     });
   } catch (err) {
     return res.status(500).json({ erro: err.message });
