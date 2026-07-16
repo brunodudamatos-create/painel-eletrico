@@ -1,5 +1,5 @@
 // ================================================================
-// api/dados.js - VERSÃO COM ALERTAS PERSONALIZADOS E TEMPERATURA
+// api/dados.js - VERSÃO COM ALERTAS, TEMPERATURA E GRAVAÇÃO NO SUPABASE
 // ================================================================
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
   const DEVICE_ID_MEDIDOR = process.env.TUYA_DEVICE_MEDIDOR;
   const DEVICE_ID_TERMOSTATO = process.env.TUYA_DEVICE_TERMOSTATO;
   const BASE_URL = 'https://openapi.tuyaus.com';
-  const LIMITE_TENSAO = 139; // Definido o limite centralizado
+  const LIMITE_TENSAO = 139; // Limite fixo de alarme
 
   try {
     const t1 = Date.now().toString();
@@ -102,13 +102,27 @@ export default async function handler(req, res) {
       temperatura.ventilador_ligado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
     }
 
-    // 3. LÓGICA DE ALARMES FORMATADOS
+    // 3. GRAVAÇÃO NO HISTÓRICO DO SUPABASE (Essencial para os Gráficos funcionarem)
+    try {
+      await supabase.from('historico').insert([{
+        tensao_a: eletrico.tensao_a ? parseFloat(eletrico.tensao_a) : null,
+        tensao_b: eletrico.tensao_b ? parseFloat(eletrico.tensao_b) : null,
+        tensao_c: eletrico.tensao_c ? parseFloat(eletrico.tensao_c) : null,
+        corrente_a: eletrico.corrente_a ? parseFloat(eletrico.corrente_a) : null,
+        corrente_b: eletrico.corrente_b ? parseFloat(eletrico.corrente_b) : null,
+        corrente_c: eletrico.corrente_c ? parseFloat(eletrico.corrente_c) : null,
+        temp_atual: temperatura.temp_atual ? parseFloat(temperatura.temp_atual) : null
+      }]);
+    } catch (dbError) {
+      console.error("Erro ao salvar histórico no Supabase:", dbError);
+    }
+
+    // 4. LÓGICA DE ALARMES FORMATADOS COM O VALOR CLARO
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
     const tc = parseFloat(eletrico.tensao_c);
 
-    // Alertas de Tensão
     if (ta > LIMITE_TENSAO) alertas.push(`*Fase A:* ${ta}V - Tensão acima de ${LIMITE_TENSAO}V`);
     if (ta < 111 && ta > 0) alertas.push(`*Fase A:* ${ta}V - Tensão abaixo de 111V`);
     if (tb > LIMITE_TENSAO) alertas.push(`*Fase B:* ${tb}V - Tensão acima de ${LIMITE_TENSAO}V`);
@@ -116,12 +130,11 @@ export default async function handler(req, res) {
     if (tc > LIMITE_TENSAO) alertas.push(`*Fase C:* ${tc}V - Tensão acima de ${LIMITE_TENSAO}V`);
     if (tc < 111 && tc > 0) alertas.push(`*Fase C:* ${tc}V - Tensão abaixo de 111V`);
 
-    // Alertas de Temperatura
     if (temperatura.temp_atual && temperatura.temp_set && parseFloat(temperatura.temp_atual) > parseFloat(temperatura.temp_set)) {
        alertas.push(`*Temperatura:* ${temperatura.temp_atual}°C - Acima do setpoint (${temperatura.temp_set}°C)`);
     }
 
-    // 4. INTEGRAÇÃO TELEGRAM (Mantém a lógica de envio inteligente)
+    // 5. INTEGRAÇÃO TELEGRAM
     let deveEnviarTelegram = false;
     let textoMensagem = '';
     const { data: estadoAnterior } = await supabase.from('status_alarmes').select('*').eq('id', 'painel_brasileira').maybeSingle();
