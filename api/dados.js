@@ -1,5 +1,5 @@
 // ================================================================
-// api/dados.js - VERSÃO COM ALERTAS, TEMPERATURA E GRAVAÇÃO NO SUPABASE
+// api/dados.js - VERSÃO COMPLETA CORRIGIDA (DADOS + HISTÓRICO + ALERTAS)
 // ================================================================
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
   const DEVICE_ID_MEDIDOR = process.env.TUYA_DEVICE_MEDIDOR;
   const DEVICE_ID_TERMOSTATO = process.env.TUYA_DEVICE_TERMOSTATO;
   const BASE_URL = 'https://openapi.tuyaus.com';
-  const LIMITE_TENSAO = 139; // Limite fixo de alarme
+  const LIMITE_TENSAO = 139; // Definido o limite centralizado
 
   try {
     const t1 = Date.now().toString();
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
       temperatura.ventilador_ligado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
     }
 
-    // 3. GRAVAÇÃO NO HISTÓRICO DO SUPABASE (Essencial para os Gráficos funcionarem)
+    // 3. GRAVAÇÃO NO HISTÓRICO DO SUPABASE (Restaurado para alimentar os gráficos)
     try {
       await supabase.from('historico').insert([{
         tensao_a: eletrico.tensao_a ? parseFloat(eletrico.tensao_a) : null,
@@ -117,7 +117,7 @@ export default async function handler(req, res) {
       console.error("Erro ao salvar histórico no Supabase:", dbError);
     }
 
-    // 4. LÓGICA DE ALARMES FORMATADOS COM O VALOR CLARO
+    // 4. LÓGICA DE ALARMES FORMATADOS
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
