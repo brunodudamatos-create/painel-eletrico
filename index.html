@@ -201,7 +201,6 @@
     data: { labels: [], datasets: [{ label: 'Temperatura (°C)', data: [], borderColor: '#f0883e', tension: 0.3, spanGaps: true }] },
     options: { responsive: true, maintainAspectRatio: false }
   });
-
   const ctxTensao = document.getElementById('tensaoChart').getContext('2d');
   const chartTensao = new Chart(ctxTensao, {
     type: 'line',
@@ -215,7 +214,6 @@
     },
     options: { responsive: true, maintainAspectRatio: false }
   });
-
   const ctxCorrente = document.getElementById('correnteChart').getContext('2d');
   const chartCorrente = new Chart(ctxCorrente, {
     type: 'line',
@@ -272,11 +270,9 @@
 
   function render(d) {
     document.getElementById('ts').textContent = 'Atualizado: ' + (d.timestamp_br || new Date().toLocaleString('pt-BR', {timeZone: 'America/Cuiaba'}));
-    
     const badge = document.getElementById('badge');
     const abox = document.getElementById('abox');
 
-    // --- EXIBIÇÃO DE ALERTAS CENTRALIZADA (Usa exclusivamente a regra do Backend) ---
     let alertasNaTela = [];
     if (d.alertas && d.alertas.length > 0) {
       alertasNaTela = d.alertas.map(a => `🚨 ` + a.replace(/\*/g, ''));
@@ -293,30 +289,29 @@
       abox.classList.remove('show');
     }
 
-    // --- PREENCHIMENTO ELÉTRICO ---
     const el = d.eletrico;
     if (el) {
       set('va', el.tensao_a, 1, 'V'); set('ia', el.corrente_a, 2, 'A');
-      set('pa', el.potencia_a, 0, 'W'); set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
+      set('pa', el.potencia_a, 0, 'W');
+      set('fpa', el.fat_pot_a, 2); set('ea', el.energia_a, 2, 'kWh');
       set('vb', el.tensao_b, 1, 'V'); set('ib', el.corrente_b, 2, 'A');
-      set('pb', el.potencia_b, 0, 'W'); set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 2, 'kWh');
+      set('pb', el.potencia_b, 0, 'W');
+      set('fpb', el.fat_pot_b, 2); set('eb', el.energia_b, 2, 'kWh');
       set('vc', el.tensao_c, 1, 'V'); set('ic', el.corrente_c, 2, 'A');
-      set('pc', el.potencia_c, 0, 'W'); set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
+      set('pc', el.potencia_c, 0, 'W');
+      set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
       set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1);
       set('fpm', el.falha, 0);
     }
     
-    // --- LÓGICA DO TERMOSTATO E VENTILADOR ---
     const temp = d.temperatura;
     if (temp) {
       const tAtual = temp.temp_atual !== null ? parseFloat(temp.temp_atual) : 0;
-      const tSet = temp.temp_set !== null ? parseFloat(temp.temp_set) : 38.0; 
-
+      const tSet = temp.temp_set !== null ? parseFloat(temp.temp_set) : 38.0;
       if (temp.temp_atual !== null) {
         const tval = document.getElementById('tval');
         tval.innerHTML = `${temp.temp_atual}<span>°C</span>`;
         tval.className = 'tnum' + (tAtual >= 50 ? ' critico' : tAtual >= 38 ? ' quente' : '');
-        
         const tMax = Math.max(60, tSet + 22);
         document.getElementById('gfill').style.width = Math.min(100, (tAtual / tMax) * 100) + '%';
         document.getElementById('tmax-label').textContent = `${tMax.toFixed(0)}°C`;
@@ -339,13 +334,13 @@
         if (fi) fi.classList.add('spin');
         if (fb) {
           fb.textContent = 'VENTILADOR ON';
-          fb.className = 'fbadge'; 
+          fb.className = 'fbadge';
         }
       } else {
         if (fi) fi.classList.remove('spin');
         if (fb) {
           fb.textContent = 'VENTILADOR OFF';
-          fb.className = 'fbadge off'; 
+          fb.className = 'fbadge off';
         }
       }
     }
@@ -384,7 +379,7 @@
         const respostaAPI = await r.json();
         render(respostaAPI);
         ultimaAtualizacao = Date.now();
-       carregarHistorico();
+        carregarHistorico(); // CORRIGIDO: Atualiza os gráficos automaticamente junto com a telemetria a cada 5 minutos
       }
     } catch(e) {
       console.log('Falha na comunicação:', e);
