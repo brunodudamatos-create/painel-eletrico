@@ -301,7 +301,31 @@
       set('pc', el.potencia_c, 0, 'W');
       set('fpc', el.fat_pot_c, 2); set('ec', el.energia_c, 2, 'kWh');
       set('ptotal', el.potencia_total, 0); set('etotal', el.energia_total, 2); set('freq', el.frequencia, 1);
-      set('fpm', el.falha, 0);
+      // 1. Potência Ativa (P) de cada fase
+      let pa = Number(el.potencia_a) || 0;
+      let pb = Number(el.potencia_b) || 0;
+      let pc = Number(el.potencia_c) || 0;
+
+      // Fatores de Potência (FP) em valor absoluto
+      let fpa = Math.abs(Number(el.fat_pot_a)) || 0;
+      let fpb = Math.abs(Number(el.fat_pot_b)) || 0;
+      let fpc = Math.abs(Number(el.fat_pot_c)) || 0;
+
+      // 2. Potência Aparente (S) de cada fase (S = |P| / FP) 
+      // A condição (fpa > 0) evita que o sistema divida por zero se a fase cair
+      let sa = (fpa > 0) ? (Math.abs(pa) / fpa) : 0;
+      let sb = (fpb > 0) ? (Math.abs(pb) / fpb) : 0;
+      let sc = (fpc > 0) ? (Math.abs(pc) / fpc) : 0;
+
+      // 3. Somatórios
+      let pTotal = Math.abs(pa + pb + pc); // Potência ativa total
+      let sTotal = sa + sb + sc;           // Potência aparente total
+
+      // 4. Fator de Potência Total Ponderado
+      let fpTotal = (sTotal > 0) ? (pTotal / sTotal) : 0;
+
+      // Envia o resultado real calculado para a tela
+      set('fpm', fpTotal, 2);
     }
     
     const temp = d.temperatura;
