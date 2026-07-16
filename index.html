@@ -374,59 +374,22 @@
 
 async function carregarHistorico() {
     try {
-      const urlCompleta = API_HISTORICO + '&_t=' + Date.now();
-      console.log("Buscando histórico em:", urlCompleta);
-      
-      const r = await fetch(urlCompleta);
-      if (!r.ok) {
-        console.error("Erro HTTP ao buscar histórico:", r.status);
-        return;
-      }
-      
+      // O &_t= força o navegador a buscar os dados frescos do banco, ignorando o cache
+      const r = await fetch(API_HISTORICO + '&_t=' + Date.now());
+      if (!r.ok) return;
       const data = await r.json();
-      console.log("Dados brutos recebidos do histórico:", data);
-
-      let lista = [];
-      if (Array.isArray(data)) {
-        lista = data;
-      } else if (data && Array.isArray(data.data)) {
-        lista = data.data;
-      } else if (data && Array.isArray(data.historico)) {
-        lista = data.historico;
-      } else {
-        console.warn("Formato de histórico desconhecido:", data);
-        return;
-      }
-
-      if (lista.length === 0) {
-        console.warn("A lista de histórico retornou vazia do Supabase!");
-        return;
-      }
-
-      historico = [...lista].reverse().map(item => {
-        const timestampRaw = item.created_at || item.timestamp || Date.now();
-        const h = new Date(timestampRaw).toLocaleTimeString('pt-BR', {
-          timeZone: 'America/Cuiaba', 
-          hour: '2-digit', 
-          minute: '2-digit'
-        });
-        
+      historico = data.reverse().map(item => {
+        const h = new Date(item.created_at || item.timestamp).toLocaleTimeString('pt-BR', {timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'});
         return {
           hora: h,
-          temp: item.temp_atual !== undefined && item.temp_atual !== null ? parseFloat(item.temp_atual) : null,
-          va: item.tensao_a !== undefined ? parseFloat(item.tensao_a) : null, 
-          vb: item.tensao_b !== undefined ? parseFloat(item.tensao_b) : null, 
-          vc: item.tensao_c !== undefined ? parseFloat(item.tensao_c) : null,
-          ia: item.corrente_a !== undefined ? parseFloat(item.corrente_a) : null, 
-          ib: item.corrente_b !== undefined ? parseFloat(item.corrente_b) : null, 
-          ic: item.corrente_c !== undefined ? parseFloat(item.corrente_c) : null   
+          temp: item.temp_atual ? parseFloat(item.temp_atual) : null,
+          va: item.tensao_a, vb: item.tensao_b, vc: item.tensao_c,
+          ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c   
         };
       });
-
-      console.log("Histórico processado com sucesso:", historico.length, "pontos.");
       renderizarGraficosWithFilter();
     } catch(e) {
-      console.error("Erro crítico ao carregar histórico:", e);
+      console.error("Erro histórico:", e);
     }
   }
 
@@ -434,31 +397,27 @@ async function carregarHistorico() {
     renderizarGraficosComFiltro();
   }
 
-  // Função principal de atualização do painel em tempo real
   async function atualizar() {
     try {
+      // O &_t= garante que a tela vai puxar dados novos da Tuya sempre
       const r = await fetch(API_URL + '&_t=' + Date.now());
       if (r.ok) {
         const respostaAPI = await r.json();
         render(respostaAPI);
         ultimaAtualizacao = Date.now();
+        carregarHistorico(); // Chama o gráfico para atualizar junto!
       }
     } catch(e) {
-      console.log('Falha na comunicação com o endpoint de dados:', e);
+      console.log('Falha na comunicação:', e);
     }
   }
 
-  // Inicialização automática ao carregar a página
-  window.onload = () => {
-    atualizar();
-    carregarHistorico();
-
-    // Atualiza os dados a cada 5 minutos (300000 ms)
-    setInterval(() => {
-      atualizar();
-      carregarHistorico();
-    }, 300000);
-  };
+  // Executa a primeira vez ao abrir a tela
+  carregarHistorico();
+  atualizar();
+  
+  // Atualiza tudo (dados + gráficos) automaticamente a cada 60 segundos
+  setInterval(atualizar, 60000);
 </script>
 </body>
 </html>
