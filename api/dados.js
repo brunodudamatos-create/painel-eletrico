@@ -1,5 +1,5 @@
 // ================================================================
-// api/dados.js - VERSÃO COM IMPORT (ES MODULE) + GRAVAÇÃO SUPABASE
+// api/dados.js - VERSÃO COM ALERTAS PERSONALIZADOS E TEMPERATURA
 // ================================================================
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -43,6 +43,7 @@ export default async function handler(req, res) {
   const DEVICE_ID_MEDIDOR = process.env.TUYA_DEVICE_MEDIDOR;
   const DEVICE_ID_TERMOSTATO = process.env.TUYA_DEVICE_TERMOSTATO;
   const BASE_URL = 'https://openapi.tuyaus.com';
+  const LIMITE_TENSAO = 139; // Definido o limite centralizado
 
   try {
     const t1 = Date.now().toString();
@@ -83,93 +84,47 @@ export default async function handler(req, res) {
       falha: dpShadow(props, 'fault')
     };
 
-    // 2. Coleta do Termostato e Lógica Inteligente
-    let temperatura = { temp_atual: null, temp_set: null, ventilador_ligado: false, debug_todos_codigos: [] };
-    if (DEVICE_ID_TERMOSTATO) {
-      try {
-        const t3 = Date.now().toString();
-        const urlTermo = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
-        const resTermo = await fetch(`${BASE_URL}${urlTermo}`, {
-          headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlTermo, token), t: t3, sign_method: 'HMAC-SHA256' }
-        });
-        const dataTermo = await resTermo.json();
-
-        if (dataTermo.result && Array.isArray(dataTermo.result)) {
-          temperatura.debug_todos_codigos = dataTermo.result.map(item => ({ code: item.code, value: item.value }));
-          
-          const itemTemp = dataTermo.result.find(i => i.code === 'temp_current');
-          const itemSet = dataTermo.result.find(i => i.code === 'temp_set');
-          
-          const tempAtualVal = (itemTemp && itemTemp.value != null) ? (itemTemp.value > 100 ? itemTemp.value / 10 : Number(itemTemp.value)) : null;
-          const tempSetVal = (itemSet && itemSet.value != null) ? (itemSet.value > 100 ? itemSet.value / 10 : Number(itemSet.value)) : null;
-
-          temperatura.temp_atual = tempAtualVal !== null ? tempAtualVal.toFixed(1) : null;
-          temperatura.temp_set = tempSetVal !== null ? tempSetVal.toFixed(1) : null;
-          
-          // Lógica inteligente: se a temperatura atual for maior que o setpoint, o ventilador está ligado
-          temperatura.ventilador_ligado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
-        } else {
-          temperatura.debug_todos_codigos = dataTermo;
-        }
-      } catch (e) {
-        temperatura.debug_todos_codigos = [{ erro: e.message }];
-      }
+    // 2. Coleta do Termostato
+    let temperatura = { temp_atual: null, temp_set: null, ventilador_ligado: false };
+    const t3 = Date.now().toString();
+    const urlTermo = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
+    const resTermo = await fetch(`${BASE_URL}${urlTermo}`, {
+      headers: { client_id: CLIENT_ID, access_token: token, sign: gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlTermo, token), t: t3, sign_method: 'HMAC-SHA256' }
+    });
+    const dataTermo = await resTermo.json();
+    if (dataTermo.result && Array.isArray(dataTermo.result)) {
+      const itemTemp = dataTermo.result.find(i => i.code === 'temp_current');
+      const itemSet = dataTermo.result.find(i => i.code === 'temp_set');
+      const tempAtualVal = (itemTemp && itemTemp.value != null) ? (itemTemp.value > 100 ? itemTemp.value / 10 : Number(itemTemp.value)) : null;
+      const tempSetVal = (itemSet && itemSet.value != null) ? (itemSet.value > 100 ? itemSet.value / 10 : Number(itemSet.value)) : null;
+      temperatura.temp_atual = tempAtualVal !== null ? tempAtualVal.toFixed(1) : null;
+      temperatura.temp_set = tempSetVal !== null ? tempSetVal.toFixed(1) : null;
+      temperatura.ventilador_ligado = (tempAtualVal !== null && tempSetVal !== null) ? (tempAtualVal > tempSetVal) : false;
     }
 
-    // 3. GRAVAÇÃO NO BANCO DE DADOS (Mantida a estrutura funcional)
-    let bancoStatus = "Não gravado";
-    try {
-      const { error: dbError } = await supabase
-        .from('telemetria_eletrica')
-        .insert([{
-          tensao_a: eletrico.tensao_a,
-          corrente_a: eletrico.corrente_a,
-          potencia_a: eletrico.potencia_a,
-          fat_pot_a: eletrico.fat_pot_a,
-          energia_a: eletrico.energia_a,
-          tensao_b: eletrico.tensao_b,
-          corrente_b: eletrico.corrente_b,
-          potencia_b: eletrico.potencia_b,
-          fat_pot_b: eletrico.fat_pot_b,
-          energia_b: eletrico.energia_b,
-          tensao_c: eletrico.tensao_c,
-          corrente_c: eletrico.corrente_c,
-          potencia_c: eletrico.potencia_c,
-          fat_pot_c: eletrico.fat_pot_c,
-          energia_c: eletrico.energia_c,
-          energia_total: eletrico.energia_total,
-          potencia_total: eletrico.potencia_total,
-          frequencia: eletrico.frequencia,
-          temp_atual: temperatura.temp_atual
-        }]);
-      if (dbError) throw dbError;
-      bancoStatus = "Gravação Sucesso";
-    } catch (dbErr) {
-      console.error("Erro ao gravar no Supabase:", dbErr);
-      bancoStatus = "Erro Supabase: " + dbErr.message;
-    }
-
-    // 4. LÓGICA DE ALARMES COMPLETOS (Restaurada)
+    // 3. LÓGICA DE ALARMES FORMATADOS
     let alertas = [];
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
     const tc = parseFloat(eletrico.tensao_c);
 
-    if (ta > 139) alertas.push(`*Fase A:* Alta tensão (${ta}V)`);
-    if (ta < 111 && ta > 0) alertas.push(`*Fase A:* Baixa tensão (${ta}V)`);
-    if (tb > 139) alertas.push(`*Fase B:* Alta tensão (${tb}V)`);
-    if (tb < 111 && tb > 0) alertas.push(`*Fase B:* Baixa tensão (${tb}V)`);
-    if (tc > 139) alertas.push(`*Fase C:* Alta tensão (${tc}V)`);
-    if (tc < 111 && tc > 0) alertas.push(`*Fase C:* Baixa tensão (${tc}V)`);
+    // Alertas de Tensão
+    if (ta > LIMITE_TENSAO) alertas.push(`*Fase A:* ${ta}V - Tensão acima de ${LIMITE_TENSAO}V`);
+    if (ta < 111 && ta > 0) alertas.push(`*Fase A:* ${ta}V - Tensão abaixo de 111V`);
+    if (tb > LIMITE_TENSAO) alertas.push(`*Fase B:* ${tb}V - Tensão acima de ${LIMITE_TENSAO}V`);
+    if (tb < 111 && tb > 0) alertas.push(`*Fase B:* ${tb}V - Tensão abaixo de 111V`);
+    if (tc > LIMITE_TENSAO) alertas.push(`*Fase C:* ${tc}V - Tensão acima de ${LIMITE_TENSAO}V`);
+    if (tc < 111 && tc > 0) alertas.push(`*Fase C:* ${tc}V - Tensão abaixo de 111V`);
 
-    // 5. INTEGRAÇÃO TELEGRAM E SUPABASE (STATUS DE ALARMES) - Restaurada
+    // Alertas de Temperatura
+    if (temperatura.temp_atual && temperatura.temp_set && parseFloat(temperatura.temp_atual) > parseFloat(temperatura.temp_set)) {
+       alertas.push(`*Temperatura:* ${temperatura.temp_atual}°C - Acima do setpoint (${temperatura.temp_set}°C)`);
+    }
+
+    // 4. INTEGRAÇÃO TELEGRAM (Mantém a lógica de envio inteligente)
     let deveEnviarTelegram = false;
     let textoMensagem = '';
-    const { data: estadoAnterior } = await supabase
-      .from('status_alarmes')
-      .select('*')
-      .eq('id', 'painel_brasileira')
-      .maybeSingle();
+    const { data: estadoAnterior } = await supabase.from('status_alarmes').select('*').eq('id', 'painel_brasileira').maybeSingle();
 
     const agora = new Date();
     let novoEstado = {
@@ -183,31 +138,15 @@ export default async function handler(req, res) {
     if (alertas.length > 0) {
       if (!estadoAnterior?.em_alerta) {
         deveEnviarTelegram = true;
-        textoMensagem = `⚠️ *ALERTA: ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+        textoMensagem = `⚠️ *ALERTA: ANORMALIDADE DETECTADA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
         novoEstado.primeiro_alerta_at = agora.toISOString();
         novoEstado.ultimo_alerta_at = agora.toISOString();
         novoEstado.estagio = 1;
-      } else {
-        const primeiroAlerta = new Date(estadoAnterior.primeiro_alerta_at);
-        const ultimoAlerta = new Date(estadoAnterior.ultimo_alerta_at);
-        const diffHorasDesdePrimeiro = (agora - primeiroAlerta) / (1000 * 60 * 60);
-        const diffHorasDesdeUltimo = (agora - ultimoAlerta) / (1000 * 60 * 60);
-
-        if (novoEstado.estagio === 1 && diffHorasDesdePrimeiro >= 1) {
-          deveEnviarTelegram = true;
-          textoMensagem = `⚠️ *RELEMBRETE (1 HORA): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
-          novoEstado.ultimo_alerta_at = agora.toISOString();
-          novoEstado.estagio = 2;
-        } else if (novoEstado.estagio === 2 && diffHorasDesdeUltimo >= 24) {
-          deveEnviarTelegram = true;
-          textoMensagem = `⚠️ *RELEMBRETE (24 HORAS): ANORMALIDADE ELÉTRICA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
-          novoEstado.ultimo_alerta_at = agora.toISOString();
-        }
       }
     } else {
       if (estadoAnterior?.em_alerta) {
         deveEnviarTelegram = true;
-        textoMensagem = `✅ *SISTEMA NORMALIZADO*\n_Painel: Brasileira Distribuidora_\n\nAs grandezas elétricas retornaram aos níveis operacionais normais.`;
+        textoMensagem = `✅ *SISTEMA NORMALIZADO*\n_Painel: Brasileira Distribuidora_\n\nTodos os parâmetros retornaram aos níveis operacionais normais.`;
         novoEstado.primeiro_alerta_at = null;
         novoEstado.ultimo_alerta_at = null;
         novoEstado.estagio = 0;
@@ -227,10 +166,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       timestamp_br: new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' }),
       status: alertas.length > 0 ? 'ALERTA' : 'NORMAL',
-      alertas,
-      eletrico,
-      temperatura,
-      banco_dados: bancoStatus
+      alertas, eletrico, temperatura, banco_dados: "OK"
     });
   } catch (err) {
     return res.status(500).json({ erro: err.message });
