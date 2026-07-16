@@ -350,7 +350,8 @@
 
   async function carregarHistorico() {
     try {
-      const r = await fetch(API_HISTORICO);
+      // O &_t= força o navegador a buscar os dados frescos do banco, ignorando o cache
+      const r = await fetch(API_HISTORICO + '&_t=' + Date.now());
       if (!r.ok) return;
       const data = await r.json();
       historico = data.reverse().map(item => {
@@ -372,25 +373,26 @@
     renderizarGraficosComFiltro();
   }
 
- async function atualizar() {
+  async function atualizar() {
     try {
-      const r = await fetch(API_URL);
+      // O &_t= garante que a tela vai puxar dados novos da Tuya sempre
+      const r = await fetch(API_URL + '&_t=' + Date.now());
       if (r.ok) {
         const respostaAPI = await r.json();
         render(respostaAPI);
         ultimaAtualizacao = Date.now();
-        carregarHistorico(); // Atualiza os gráficos automaticamente junto com a telemetria
+        carregarHistorico(); // Chama o gráfico para atualizar junto!
       }
     } catch(e) {
       console.log('Falha na comunicação:', e);
     }
   }
 
-  // Executa a primeira vez ao carregar a página
+  // Executa a primeira vez ao abrir a tela
   carregarHistorico();
   atualizar();
-
-  // O painel vai rodar a função atualizar a cada 60 segundos (60000 ms)
+  
+  // Atualiza tudo (dados + gráficos) automaticamente a cada 60 segundos
   setInterval(atualizar, 60000);
 </script>
 </body>
