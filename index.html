@@ -372,7 +372,7 @@
     document.getElementById('fmodo').textContent = d.banco_dados || '--';
   }
 
- async function carregarHistorico() {
+async function carregarHistorico() {
     try {
       const urlCompleta = API_HISTORICO + '&_t=' + Date.now();
       console.log("Buscando histórico em:", urlCompleta);
@@ -386,7 +386,6 @@
       const data = await r.json();
       console.log("Dados brutos recebidos do histórico:", data);
 
-      // Garante que 'data' é uma matriz (array), independente de como a API responda
       let lista = [];
       if (Array.isArray(data)) {
         lista = data;
@@ -404,7 +403,6 @@
         return;
       }
 
-      // Mapeia os dados com segurança contra valores nulos
       historico = [...lista].reverse().map(item => {
         const timestampRaw = item.created_at || item.timestamp || Date.now();
         const h = new Date(timestampRaw).toLocaleTimeString('pt-BR', {
@@ -431,5 +429,36 @@
       console.error("Erro crítico ao carregar histórico:", e);
     }
   }
+
+  function renderizarGraficosWithFilter() {
+    renderizarGraficosComFiltro();
+  }
+
+  // Função principal de atualização do painel em tempo real
+  async function atualizar() {
+    try {
+      const r = await fetch(API_URL + '&_t=' + Date.now());
+      if (r.ok) {
+        const respostaAPI = await r.json();
+        render(respostaAPI);
+        ultimaAtualizacao = Date.now();
+      }
+    } catch(e) {
+      console.log('Falha na comunicação com o endpoint de dados:', e);
+    }
+  }
+
+  // Inicialização automática ao carregar a página
+  window.onload = () => {
+    atualizar();
+    carregarHistorico();
+
+    // Atualiza os dados a cada 5 minutos (300000 ms)
+    setInterval(() => {
+      atualizar();
+      carregarHistorico();
+    }, 300000);
+  };
+</script>
 </body>
 </html>
