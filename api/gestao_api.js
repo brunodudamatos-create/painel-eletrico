@@ -1,108 +1,71 @@
-async function carregarGestaoEnergetica() {
+const { createClient } = require('@supabase/supabase-js');
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+export default async function handler(req, res) {
     try {
-        const res = await fetch('/api/gestao');
-        const dados = await res.json();
-        if (!dados || dados.length === 0) return;
+        // Busca os dados brutos da telemetria que vêm da Tuya (últimos 30 dias)
+        const trintaDiasAtras = new Date();
+        trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
 
-        const hoje = dados[dados.length - 1];
+        const { data: leiturasBrutas, error } = await supabase
+            .from('telemetria_eletrica') // Tabela onde a Tuya salva os dados no seu index
+            .select('*')
+            .gte('created_at', trintaDiasAtras.toISOString())
+            .order('created_at', { ascending: true });
 
-        // BLOCO 1: Card Destaque (Hero Card)
-        const heroCard = document.getElementById('hero-card');
-        const heroContent = document.getElementById('hero-content');
-        if (hoje.economia_rs > 0) {
-            heroCard.style.borderLeftColor = '#3fb950';
-            const autoconsumo = hoje.geracao_kwh > 0 ? Math.min((hoje.consumo_kwh / hoje.geracao_kwh) * 100, 100).toFixed(1) : 0;
-            heroContent.innerHTML = `
-                <p style="margin: 0 0 5px 0; color: #3fb950;">✔ Hoje você economizou R$ ${Number(hoje.economia_rs).toFixed(2)} graças à geração própria.</p>
-                <p style="margin: 0; color: #8b949e; font-size: 0.9rem;">A geração supriu cerca de ${autoconsumo}% da demanda da unidade.</p>
-            `;
-        } else {
-            heroCard.style.borderLeftColor = '#f85149';
-            heroContent.innerHTML = `
-                <p style="margin: 0 0 5px 0; color: #f85149;">⚠ Hoje a geração não foi suficiente.</p>
-                <p style="margin: 0; color: #8b949e; font-size: 0.9rem;">Foi necessário adquirir ${hoje.energia_rede_kwh || 0} kWh da concessionária | Custo estimado: R$ ${Number(hoje.custo_rede_rs || 0).toFixed(2)}</p>
-            `;
+        if (error) throw error;
+
+        if (!leiturasBrutas || leiturasBrutas.length === 0) {
+            return res.status(200).json([]);
         }
 
-        // BLOCO 2: Indicadores Diários
-        document.getElementById('val-geracao').innerText = `${hoje.geracao_kwh} kWh`;
-        document.getElementById('val-consumo').innerText = `${hoje.consumo_kwh} kWh`;
-        document.getElementById('val-saldo').innerText = `${hoje.saldo_kwh} kWh`;
-        document.getElementById('val-custo').innerText = `R$ ${Number(hoje.custo_rede_rs || 0).toFixed(2)}`;
+        // Agrupa os dados brutos por dia para alimentar os gráficos e cards
+        const agrupadoPorDia = {};
 
-        // BLOCO 3: Indicadores Mensais
-        const saldoMes = dados.reduce((acc, curr) => acc + Number(curr.saldo_kwh), 0);
-        const economiaMes = dados.reduce((acc, curr) => acc + Number(curr.economia_rs), 0);
-        const redeMes = dados.reduce((acc, curr) => acc + Number(curr.energia_rede_kwh || 0), 0);
-        const autossuficienciaMedia = (dados.reduce((acc, curr) => acc + Number(curr.autossuficiencia || 0), 0) / dados.length).toFixed(1);
+        leiturasBrutas.forEach(leitura => {
+            const dataDia = leitura.created_at.split('T')[0]; // Pega apenas a data (YYYY-MM-DD)
 
-        document.getElementById('mes-saldo').innerText = `${saldoMes.toFixed(1)} kWh`;
-        document.getElementById('mes-economia').innerText = `R$ ${economiaMes.toFixed(2)}`;
-        document.getElementById('mes-rede').innerText = `${redeMes.toFixed(1)} kWh`;
-        document.getElementById('mes-autossuficiencia').innerText = `${autossuficienciaMedia}%`;
+            if (!agrupadoPorDia[dataDia]) {
+                agrupadoPorDia[dataDia] = {
+                    data: dataDia,
+                    consumo_kwh: 0,
+                    geracao_kwh: 0,
+                    leituras_count: 0,
+                    soma_tensao: 0
+                };
+            }
 
-        // BLOCOS 4 a 7: Gráficos
-        renderizarGraficos(dados);
+            // Acumula os valores (ajuste os nomes das colunas conforme a sua tabela de telemetria)
+            agrupadoPorDia[dataDia].consumo_kwh += Number(leitura.consumo_kwh || leitura.energia_ativa || 0);
+            agrupadoPorDia[dataDia].geracao_kwh += Number(leitura.geracao_kwh || 0); // Se houver inversor
+            agrupadoPorDia[dataDia].leituras_count += 1;
+        });
 
-    } catch (err) {
-        console.error("Erro ao carregar dados executivos:", err);
+        // Transforma o objeto agrupado em um array ordenado para o front-end
+        const resultadoFinal = Object.values(agrupadoPorDia).map(dia => {
+            const saldo = dia.geracao_kwh - dia.consumo_kwh;
+            const economia = dia.geracao_kwh * 0.85; // Tarifa média estimada de exemplo (R$ 0,85/kWh)
+            const custoRede = dia.consumo_kwh * 0.85;
+
+            return {
+                data: dia.data,
+                consumo_kwh: Number(dia.consumo_kwh.toFixed(2)),
+                geracao_kwh: Number(dia.geracao_kwh.toFixed(2)),
+                saldo_kwh: Number(saldo.toFixed(2)),
+                energia_rede_kwh: Number(dia.consumo_kwh.toFixed(2)),
+                economia_rs: Number(economia.toFixed(2)),
+                custo_rede_rs: Number(custoRede.toFixed(2)),
+                autossuficiencia: dia.geracao_kwh > 0 ? Math.min((dia.consumo_kwh / dia.geracao_kwh) * 100, 100).toFixed(1) : 0
+            };
+        });
+
+        res.status(200).json(resultadoFinal);
+
+    } catch (erro) {
+        console.error('Erro ao processar dados da Tuya para gestão:', erro);
+        res.status(500).json({ erro: 'Falha ao processar telemetria' });
     }
 }
-
-function renderizarGraficos(dados) {
-    const labels = dados.map(d => d.data.substring(8, 10) + '/' + d.data.substring(5, 7));
-
-    // Bloco 4: Gráfico de barras agrupadas (Consumo x Geração)
-    new Chart(document.getElementById('graficoConsumoGeracao').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels,
-            datasets: [
-                { label: 'Geração (kWh)', data: dados.map(d => d.geracao_kwh), backgroundColor: '#3fb950' },
-                { label: 'Consumo (kWh)', data: dados.map(d => d.consumo_kwh), backgroundColor: '#f85149' }
-            ]
-        },
-        options: { responsive: true, scales: { y: { beginAtZero: true, grid: { color: '#30363d' } }, x: { grid: { display: false } } } }
-    });
-
-    // Bloco 5: Gráfico de saldo diário (Verde/Vermelho)
-    new Chart(document.getElementById('graficoSaldoDiario').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels,
-            datasets: [{
-                label: 'Saldo (kWh)',
-                data: dados.map(d => d.saldo_kwh),
-                backgroundColor: dados.map(d => d.saldo_kwh >= 0 ? '#3fb950' : '#f85149')
-            }]
-        },
-        options: { responsive: true, scales: { y: { beginAtZero: true, grid: { color: '#30363d' } }, x: { grid: { display: false } } } }
-    });
-
-    // Bloco 6: Gráfico de linha (Economia acumulada)
-    let acumulado = 0;
-    const dadosEconomia = dados.map(d => {
-        acumulado += Number(d.economia_rs);
-        return acumulado;
-    });
-    new Chart(document.getElementById('graficoEconomiaAcumulada').getContext('2d'), {
-        type: 'line',
-        data: {
-            labels,
-            datasets: [{ label: 'Economia Acumulada (R$)', data: dadosEconomia, borderColor: '#58a6ff', backgroundColor: 'rgba(88, 166, 255, 0.1)', fill: true, tension: 0.2 }]
-        },
-        options: { responsive: true, scales: { y: { beginAtZero: true, grid: { color: '#30363d' } }, x: { grid: { display: false } } } }
-    });
-
-    // Bloco 7: Gráfico de barras (Custo diário da energia)
-    new Chart(document.getElementById('graficoCustoDiario').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels,
-            datasets: [{ label: 'Custo da Rede (R$)', data: dados.map(d => d.custo_rede_rs || 0), backgroundColor: '#f0883e' }]
-        },
-        options: { responsive: true, scales: { y: { beginAtZero: true, grid: { color: '#30363d' } }, x: { grid: { display: false } } } }
-    });
-}
-
-window.onload = carregarGestaoEnergetica;
