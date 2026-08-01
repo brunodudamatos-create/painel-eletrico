@@ -7,7 +7,8 @@ export default async function handler(req, res) {
 
         if (!supabaseUrl || !supabaseKey) {
             return res.status(500).json({ 
-                erro: 'Variáveis de ambiente do Supabase não configuradas na Vercel',
+                status: "ERRO_CONFIGURACAO",
+                mensagem: "As variáveis de ambiente do Supabase (URL ou KEY) não estão configuradas na Vercel.",
                 temUrl: !!supabaseUrl,
                 temKey: !!supabaseKey
             });
@@ -15,64 +16,32 @@ export default async function handler(req, res) {
 
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        // Teste básico de conexão e busca na tabela 'dados'
-        const { data: leiturasBrutas, error } = await supabase
+        // Testando a conexão e busca na tabela 'dados'
+        const { data, error } = await supabase
             .from('dados')
             .select('*')
-            .limit(100);
+            .limit(5);
 
         if (error) {
-            return res.status(500).json({ erro: 'Erro na query do Supabase: ' + error.message });
+            return res.status(500).json({
+                status: "ERRO_SUPABASE",
+                mensagem: error.message,
+                detalhes: error,
+                dica: "Verifique se a tabela 'dados' realmente existe no seu banco Supabase ou se o nome é diferente."
+            });
         }
 
-        if (!leiturasBrutas || leiturasBrutas.length === 0) {
-            return res.status(200).json([]);
-        }
-
-        const agrupadoPorDia = {};
-
-        leiturasBrutas.forEach(leitura => {
-            const timestamp = leitura.created_at || leitura.data || leitura.timestamp;
-            if (!timestamp) return;
-            const dataDia = timestamp.split('T')[0];
-
-            if (!agrupadoPorDia[dataDia]) {
-                agrupadoPorDia[dataDia] = {
-                    data: dataDia,
-                    consumo_kwh: 0,
-                    geracao_kwh: 0
-                };
-            }
-
-            const consumo = Number(leitura.consumo || leitura.consumo_kwh || leitura.energia_ativa || 0);
-            const geracao = Number(leitura.geracao || leitura.geracao_kwh || 0);
-
-            agrupadoPorDia[dataDia].consumo_kwh += consumo;
-            agrupadoPorDia[dataDia].geracao_kwh += geracao;
+        return res.status(200).json({
+            status: "SUCESSO_CONEXAO",
+            totalRegistrosEncontrados: data ? data.length : 0,
+            amostraDados: data
         });
 
-        const resultadoFinal = Object.values(agrupadoPorDia).map(dia => {
-            const saldo = dia.geracao_kwh - dia.consumo_kwh;
-            const economia = dia.geracao_kwh * 0.85;
-            const custoRede = dia.consumo_kwh * 0.85;
-
-            return {
-                data: dia.data,
-                consumo_kwh: Number(dia.consumo_kwh.toFixed(2)),
-                geracao_kwh: Number(dia.geracao_kwh.toFixed(2)),
-                saldo_kwh: Number(saldo.toFixed(2)),
-                energia_rede_kwh: Number(dia.consumo_kwh.toFixed(2)),
-                economia_rs: Number(economia.toFixed(2)),
-                custo_rede_rs: Number(custoRede.toFixed(2)),
-                autossuficiencia: dia.geracao_kwh > 0 ? Math.min((dia.consumo_kwh / dia.geracao_kwh) * 100, 100).toFixed(1) : 0
-            };
+    } catch (err) {
+        return res.status(500).json({
+            status: "EXCECAO_CRITICA",
+            mensagem: err.message,
+            stack: err.stack
         });
-
-        resultadoFinal.sort((a, b) => new Date(a.data) - new Date(b.data));
-
-        return res.status(200).json(resultadoFinal);
-
-    } catch (erro) {
-        return res.status(500).json({ erro: 'Exceção capturada: ' + erro.message, stack: erro.stack });
     }
 }
