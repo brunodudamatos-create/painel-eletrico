@@ -1,71 +1,31 @@
 const { createClient } = require('@supabase/supabase-js');
 
-// ⚠️ ALTERE AQUI para o nome exato da sua tabela no Supabase (ex: 'leituras', 'medicoes', 'telemetria')
-const energy_daily_summary = 'leituras'; 
-
 export default async function handler(req, res) {
     try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
         const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
 
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
-        const { data: leiturasBrutas, error } = await supabase
-            .from(energy_daily_summary)
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(500);
-
-        if (error) {
-            return res.status(500).json({ erro: 'Erro na query: ' + error.message, tabelaUsada: NOME_TABELA });
+        if (!supabaseUrl || !supabaseKey) {
+            return res.status(500).json({ erro: 'Variáveis de ambiente do Supabase não configuradas na Vercel.' });
         }
 
-        if (!leiturasBrutas || leiturasBrutas.length === 0) {
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        const { data, error } = await supabase
+            .from('energy_daily_summary')
+            .select('*')
+            .order('data', { ascending: true })
+            .limit(30);
+
+        if (error) {
+            return res.status(500).json({ erro: 'Erro na query: ' + error.message });
+        }
+
+        if (!data || data.length === 0) {
             return res.status(200).json([]);
         }
 
-        const agrupadoPorDia = {};
-
-        leiturasBrutas.forEach(leitura => {
-            const timestamp = leitura.created_at || leitura.data || leitura.timestamp;
-            if (!timestamp) return;
-            const dataDia = timestamp.split('T')[0];
-
-            if (!agrupadoPorDia[dataDia]) {
-                agrupadoPorDia[dataDia] = {
-                    data: dataDia,
-                    consumo_kwh: 0,
-                    geracao_kwh: 0
-                };
-            }
-
-            const consumo = Number(leitura.consumo || leitura.consumo_kwh || leitura.energia_ativa || 0);
-            const geracao = Number(leitura.geracao || leitura.geracao_kwh || 0);
-
-            agrupadoPorDia[dataDia].consumo_kwh += consumo;
-            agrupadoByDia = agrupadoPorDia[dataDia].geracao_kwh += geracao;
-        });
-
-        const resultadoFinal = Object.values(agrupadoPorDia).map(dia => {
-            const saldo = dia.geracao_kwh - dia.consumo_kwh;
-            const economia = dia.geracao_kwh * 0.85;
-            const custoRede = dia.consumo_kwh * 0.85;
-
-            return {
-                data: dia.data,
-                consumo_kwh: Number(dia.consumo_kwh.toFixed(2)),
-                geracao_kwh: Number(dia.geracao_kwh.toFixed(2)),
-                saldo_kwh: Number(saldo.toFixed(2)),
-                energia_rede_kwh: Number(dia.consumo_kwh.toFixed(2)),
-                economia_rs: Number(economia.toFixed(2)),
-                custo_rede_rs: Number(custoRede.toFixed(2)),
-                autossuficiencia: dia.geracao_kwh > 0 ? Math.min((dia.consumo_kwh / dia.geracao_kwh) * 100, 100).toFixed(1) : 0
-            };
-        });
-
-        resultadoFinal.sort((a, b) => new Date(a.data) - new Date(b.data));
-
-        return res.status(200).json(resultadoFinal);
+        return res.status(200).json(data);
 
     } catch (erro) {
         return res.status(500).json({ erro: 'Exceção: ' + erro.message });
