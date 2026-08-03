@@ -7,14 +7,14 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 25px; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
         .label { color: #8b949e; font-size: 0.75rem; text-transform: uppercase; font-weight: bold; }
         .value { font-size: 1.8rem; font-weight: bold; margin-top: 8px; }
         .positivo { color: #3fb950; }
         .negativo { color: #f85149; }
         .neutro { color: #58a6ff; }
-        input[type="month"] { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; padding: 8px; border-radius: 5px; color-scheme: dark; }
+        .section-title { font-size: 1rem; color: #8b949e; margin-top: 15px; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; }
     </style>
 </head>
 <body class="dark-theme" style="background-color: #0d1117; color: #e6edf3; font-family: sans-serif; margin: 0; padding: 0;">
@@ -22,50 +22,64 @@
         <div>
             <h1 style="color: #58a6ff; font-size: 1.25rem; margin: 0;">📊 Gestão Energética Avançada</h1>
         </div>
-        <div style="display: flex; gap: 15px; align-items: center;">
-            <input type="month" id="mesFiltro" title="Filtrar por Mês">
-            <a href="index.html" class="btn-voltar" style="background: #21262d; color: #c9d1d9; padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px; text-decoration: none; font-size: 0.9rem;">⬅ Voltar</a>
-        </div>
+        <a href="index.html" class="btn-voltar" style="background: #21262d; color: #c9d1d9; padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px; text-decoration: none; font-size: 0.9rem;">⬅ Voltar</a>
     </header>
 
     <main style="max-width: 1400px; margin: 20px auto; padding: 0 20px;">
         
-        <h2 style="font-size: 1rem; color: #8b949e; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px;">RESUMO DO PERÍODO SELECIONADO</h2>
+        <!-- Bloco 1: Desempenho do Mês Atual -->
+        <h2 id="titulo-mes" class="section-title">RESUMO DO MÊS ATUAL</h2>
         <section class="card-grid">
             <div class="card">
-                <div class="label">Geração Solar Total</div>
-                <div id="val-geracao" class="value positivo">0 kWh</div>
+                <div class="label">Geração Solar do Mês</div>
+                <div id="mes-geracao" class="value positivo">...</div>
             </div>
             <div class="card">
-                <div class="label">Consumo de Energia Total</div>
-                <div id="val-consumo" class="value negativo">0 kWh</div>
+                <div class="label">Consumo Total do Mês</div>
+                <div id="mes-consumo" class="value negativo">...</div>
             </div>
             <div class="card">
-                <div class="label">Balanço (Injetado - Consumido)</div>
-                <div id="val-saldo" class="value neutro">0 kWh</div>
+                <div class="label">Saldo do Mês (Injetado - Consumido)</div>
+                <div id="mes-saldo" class="value neutro">...</div>
             </div>
             <div class="card">
-                <div class="label">Economia Gerada (R$)</div>
-                <div id="val-economia" class="value positivo">R$ 0,00</div>
+                <div class="label">Economia no Mês (R$)</div>
+                <div id="mes-economia" class="value positivo">...</div>
             </div>
         </section>
 
-        <h2 style="font-size: 1rem; color: #8b949e; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px;">ANÁLISE ANUAL (MENSAL)</h2>
-        <section class="card-grid" style="grid-template-columns: 1fr;">
-            <div class="card">
-                <canvas id="graficoAnual" style="max-height: 350px;"></canvas>
+        <!-- Bloco 2: Indicadores de Curto Prazo (Dia e Semana) -->
+        <h2 class="section-title">INDICADORES DE CURTO PRAZO</h2>
+        <section class="card-grid" style="grid-template-columns: 1fr 1fr;">
+            <div class="card" style="border-left: 4px solid #58a6ff;">
+                <div class="label">Saldo do Dia (Hoje)</div>
+                <div id="hoje-saldo" class="value">...</div>
+            </div>
+            <div class="card" style="border-left: 4px solid #a371f7;">
+                <div class="label">Saldo da Última Semana (7 dias)</div>
+                <div id="semana-saldo" class="value">...</div>
             </div>
         </section>
 
-        <h2 style="font-size: 1rem; color: #8b949e; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px;">DETALHAMENTO DIÁRIO</h2>
+        <!-- Bloco 3: Gráficos Diários -->
+        <h2 class="section-title">ACOMPANHAMENTO DIÁRIO (MÊS ATUAL)</h2>
         <section class="card-grid" style="grid-template-columns: 1fr 1fr;">
             <div class="card">
-                <div class="label" style="margin-bottom: 15px;">Geração x Consumo (Diário)</div>
-                <canvas id="graficoDiario" style="max-height: 300px;"></canvas>
+                <div class="label" style="margin-bottom: 15px;">Geração x Consumo</div>
+                <canvas id="graficoDiario" style="max-height: 280px;"></canvas>
             </div>
             <div class="card">
-                <div class="label" style="margin-bottom: 15px;">Balanço Energético (Diário)</div>
-                <canvas id="graficoSaldo" style="max-height: 300px;"></canvas>
+                <div class="label" style="margin-bottom: 15px;">Balanço Energético Diário</div>
+                <canvas id="graficoSaldo" style="max-height: 280px;"></canvas>
+            </div>
+        </section>
+
+        <!-- Bloco 4: Gráfico Histórico Mensal -->
+        <h2 class="section-title">HISTÓRICO MENSAL CONSOLIDADO</h2>
+        <section class="card-grid" style="grid-template-columns: 1fr;">
+            <div class="card">
+                <div class="label" style="margin-bottom: 15px;">Consumo x Produção por Mês</div>
+                <canvas id="graficoMensal" style="max-height: 350px;"></canvas>
             </div>
         </section>
     </main>
