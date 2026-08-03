@@ -10,7 +10,7 @@ export default async function handler(req, res) {
         const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
 
         if (!supabaseUrl || !supabaseKey) {
-            return res.status(500).json({ erro: "Variáveis de ambiente do Supabase não configuradas na Vercel." });
+            return res.status(500).json({ erro: "Variáveis de ambiente do Supabase não configuradas." });
         }
 
         const supabase = createClient(supabaseUrl, supabaseKey);
@@ -21,35 +21,32 @@ export default async function handler(req, res) {
             .order('created_at', { ascending: true });
 
         if (error) {
-            return res.status(500).json({ erro: "Erro na query do Supabase: " + error.message });
+            return res.status(500).json({ erro: "Erro no Supabase: " + error.message });
         }
 
         if (!leituras || leituras.length === 0) {
-            return res.status(200).json({ aviso: "A tabela 'telemetria_eletrica' está vazia.", diarios: [], mensais: [] });
+            return res.status(200).json({ aviso: "Tabela vazia.", diarios: [], mensais: [] });
         }
 
         const agrupadoPorDia = {};
         const agrupadoPorMes = {};
         let leituraAnterior = null;
 
-        // Formatadores seguros para o fuso horário de Cuiabá (GMT-4)
-        const fmtDia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit' });
-        const fmtMes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit' });
-
         leituras.forEach(leitura => {
-            const dataObjeto = new Date(leitura.created_at);
+            const utcDate = new Date(leitura.created_at);
+            // Cuiabá é UTC-4 fixo. Subtraímos 4 horas do timestamp UTC para obter a data local exata.
+            const localDate = new Date(utcDate.getTime() - (4 * 3600 * 1000));
             
-            // Extração correta da data local baseada em Cuiabá (sem corromper o timestamp)
-            const strDia = fmtDia.format(dataObjeto); // Ex: "2026-08-02"
-            const strMes = fmtMes.format(dataObjeto); // Ex: "2026-08"
+            const strIso = localDate.toISOString(); // Ex: 2026-08-02T...
+            const strDia = strIso.split('T')[0]; // 2026-08-02
+            const strMes = strDia.substring(0, 7); // 2026-08
 
             if (!agrupadoPorDia[strDia]) agrupadoPorDia[strDia] = { data: strDia, consumo_kwh: 0, geracao_kwh: 0 };
             if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_kwh: 0, geracao_kwh: 0 };
 
             if (leituraAnterior) {
-                const deltaHoras = (dataObjeto.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
+                const deltaHoras = (utcDate.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
                 
-                // Intervalos válidos de até 2 horas entre leituras consecutivas
                 if (deltaHoras > 0 && deltaHoras <= 2) {
                     const potAtual = Number(leitura.potencia_total) / 1000;
                     const potAnt = Number(leituraAnterior.potencia_total) / 1000;
@@ -83,12 +80,13 @@ export default async function handler(req, res) {
             };
         };
 
-        const resultadoDiario = Object.values(agrupadoPorDia).map(d => formatarDados(d, false));
-        const resultadoMensal = Object.values(agrupadoPorMes).map(m => formatarDados(m, true));
+        // Ordena estritamente de forma cronológica
+        const resultadoDiario = Object.values(agrupadoPorDia).sort((a,b) => a.data.localeCompare(b.data)).map(d => formatarDados(d, false));
+        const resultadoMensal = Object.values(agrupadoPorMes).sort((a,b) => a.mes.localeCompare(b.mes)).map(m => formatarDados(m, true));
 
         return res.status(200).json({ diarios: resultadoDiario, mensais: resultadoMensal });
 
     } catch (erro) {
-        return res.status(500).json({ erro: "Exceção interna na API: " + erro.message });
+        return res.status(500).json({ erro: "Erro interno: " + erro.message });
     }
 }
