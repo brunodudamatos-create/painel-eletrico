@@ -1,13 +1,16 @@
 const { createClient } = require('@supabase/supabase-js');
 
 export default async function handler(req, res) {
+    // Evita cache na Vercel
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
         const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
-
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        // Busca todo o histórico ordenado para montar o consolidado Anual e Diário
         const { data: leituras, error } = await supabase
             .from('telemetria_eletrica')
             .select('created_at, potencia_total')
@@ -20,14 +23,14 @@ export default async function handler(req, res) {
         const agrupadoPorMes = {};
         let leituraAnterior = null;
 
-        // Fuso de Mato Grosso para evitar cortes de dia incorretos
-        const fmtDia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit' });
-        const fmtMes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit' });
-
         leituras.forEach(leitura => {
+            // Ajuste matemático rígido para o fuso horário (UTC-4)
             const dataObjeto = new Date(leitura.created_at);
-            const strDia = fmtDia.format(dataObjeto); // YYYY-MM-DD
-            const strMes = fmtMes.format(dataObjeto); // YYYY-MM
+            dataObjeto.setHours(dataObjeto.getHours() - 4); 
+            
+            // Garante o formato estrito ISO YYYY-MM-DD e YYYY-MM
+            const strDia = dataObjeto.toISOString().split('T')[0]; 
+            const strMes = strDia.substring(0, 7); 
 
             if (!agrupadoPorDia[strDia]) agrupadoPorDia[strDia] = { data: strDia, consumo_kwh: 0, geracao_kwh: 0 };
             if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_kwh: 0, geracao_kwh: 0 };
@@ -36,7 +39,6 @@ export default async function handler(req, res) {
                 const deltaHoras = (dataObjeto.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
                 
                 if (deltaHoras > 0 && deltaHoras <= 2) {
-                    // Integração Trapezoidal (Média entre a leitura atual e anterior) dividida por 1000 para kW
                     const potAtual = leitura.potencia_total / 1000;
                     const potAnt = leituraAnterior.potencia_total / 1000;
                     const potenciaMediaKw = (potAtual + potAnt) / 2;
@@ -59,15 +61,13 @@ export default async function handler(req, res) {
         const formatarDados = (obj, isMes = false) => {
             const consumo = obj.consumo_kwh;
             const geracao = obj.geracao_kwh;
-            const autossuficiencia = geracao > 0 ? Math.min((geracao / consumo) * 100, 100) : 0;
             return {
                 [isMes ? 'mes' : 'data']: obj[isMes ? 'mes' : 'data'],
                 consumo_kwh: Number(consumo.toFixed(2)),
                 geracao_kwh: Number(geracao.toFixed(2)),
                 saldo_kwh: Number((geracao - consumo).toFixed(2)),
                 economia_rs: Number((geracao * TARIFA).toFixed(2)),
-                custo_rede_rs: Number((consumo * TARIFA).toFixed(2)),
-                autossuficiencia: Number(autossuficiencia.toFixed(1))
+                custo_rede_rs: Number((consumo * TARIFA).toFixed(2))
             };
         };
 
