@@ -15,7 +15,6 @@ export default async function handler(req, res) {
 
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        // Busca as leituras ordenadas cronologicamente
         const { data: leituras, error } = await supabase
             .from('telemetria_eletrica')
             .select('created_at, potencia_total')
@@ -33,13 +32,16 @@ export default async function handler(req, res) {
         const agrupadoPorMes = {};
         let leituraAnterior = null;
 
+        // Formatadores seguros para o fuso horário de Cuiabá (GMT-4)
+        const fmtDia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit' });
+        const fmtMes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit' });
+
         leituras.forEach(leitura => {
             const dataObjeto = new Date(leitura.created_at);
-            // Ajuste para o fuso de Mato Grosso (UTC-4)
-            dataObjeto.setHours(dataObjeto.getHours() - 4); 
             
-            const strDia = dataObjeto.toISOString().split('T')[0]; // YYYY-MM-DD
-            const strMes = strDia.substring(0, 7); // YYYY-MM
+            // Extração correta da data local baseada em Cuiabá (sem corromper o timestamp)
+            const strDia = fmtDia.format(dataObjeto); // Ex: "2026-08-02"
+            const strMes = fmtMes.format(dataObjeto); // Ex: "2026-08"
 
             if (!agrupadoPorDia[strDia]) agrupadoPorDia[strDia] = { data: strDia, consumo_kwh: 0, geracao_kwh: 0 };
             if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_kwh: 0, geracao_kwh: 0 };
@@ -47,7 +49,7 @@ export default async function handler(req, res) {
             if (leituraAnterior) {
                 const deltaHoras = (dataObjeto.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
                 
-                // Considera intervalos válidos de até 2 horas entre leituras
+                // Intervalos válidos de até 2 horas entre leituras consecutivas
                 if (deltaHoras > 0 && deltaHoras <= 2) {
                     const potAtual = Number(leitura.potencia_total) / 1000;
                     const potAnt = Number(leituraAnterior.potencia_total) / 1000;
