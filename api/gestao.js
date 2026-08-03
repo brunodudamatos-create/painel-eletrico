@@ -32,20 +32,22 @@ export default async function handler(req, res) {
         const agrupadoPorMes = {};
         let leituraAnterior = null;
 
+        // Formatador seguro para extrair a data civil exata no fuso de Cuiabá (GMT-4)
+        const fmtDia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit' });
+        const fmtMes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit' });
+
         leituras.forEach(leitura => {
-            const utcDate = new Date(leitura.created_at);
-            // Cuiabá é UTC-4 fixo. Subtraímos 4 horas do timestamp UTC para obter a data local exata.
-            const localDate = new Date(utcDate.getTime() - (4 * 3600 * 1000));
+            const dataObjeto = new Date(leitura.created_at);
             
-            const strIso = localDate.toISOString(); // Ex: 2026-08-02T...
-            const strDia = strIso.split('T')[0]; // 2026-08-02
-            const strMes = strDia.substring(0, 7); // 2026-08
+            // Extração limpa sem corromper o timestamp UTC
+            const strDia = fmtDia.format(dataObjeto); // Ex: "2026-07-15"
+            const strMes = fmtMes.format(dataObjeto); // Ex: "2026-07"
 
             if (!agrupadoPorDia[strDia]) agrupadoPorDia[strDia] = { data: strDia, consumo_kwh: 0, geracao_kwh: 0 };
             if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_kwh: 0, geracao_kwh: 0 };
 
             if (leituraAnterior) {
-                const deltaHoras = (utcDate.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
+                const deltaHoras = (dataObjeto.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
                 
                 if (deltaHoras > 0 && deltaHoras <= 2) {
                     const potAtual = Number(leitura.potencia_total) / 1000;
@@ -80,7 +82,6 @@ export default async function handler(req, res) {
             };
         };
 
-        // Ordena estritamente de forma cronológica
         const resultadoDiario = Object.values(agrupadoPorDia).sort((a,b) => a.data.localeCompare(b.data)).map(d => formatarDados(d, false));
         const resultadoMensal = Object.values(agrupadoPorMes).sort((a,b) => a.mes.localeCompare(b.mes)).map(m => formatarDados(m, true));
 
