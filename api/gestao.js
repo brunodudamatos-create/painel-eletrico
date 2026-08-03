@@ -32,24 +32,24 @@ export default async function handler(req, res) {
         const agrupadoPorMes = {};
         let leituraAnterior = null;
 
-        // Formatador seguro para extrair a data civil exata no fuso de Cuiabá (GMT-4)
+        // Formatadores para o fuso horário de Cuiabá (GMT-4)
         const fmtDia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit' });
         const fmtMes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit' });
 
         leituras.forEach(leitura => {
             const dataObjeto = new Date(leitura.created_at);
             
-            // Extração limpa sem corromper o timestamp UTC
-            const strDia = fmtDia.format(dataObjeto); // Ex: "2026-07-15"
-            const strMes = fmtMes.format(dataObjeto); // Ex: "2026-07"
+            const strDia = fmtDia.format(dataObjeto); // Ex: "2026-08-02"
+            const strMes = fmtMes.format(dataObjeto); // Ex: "2026-08"
 
             if (!agrupadoPorDia[strDia]) agrupadoPorDia[strDia] = { data: strDia, consumo_kwh: 0, geracao_kwh: 0 };
-            if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_kwh: 0, geracao_kwh: 0 };
+            if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_ksh: 0, geracao_kwh: 0, consumo_kwh: 0 };
 
             if (leituraAnterior) {
                 const deltaHoras = (dataObjeto.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
                 
-                if (deltaHoras > 0 && deltaHoras <= 2) {
+                // Tolerância aumentada para até 12 horas para não zerar dados se o ESP32 ficar offline instantes
+                if (deltaHoras > 0 && deltaHoras <= 12) {
                     const potAtual = Number(leitura.potencia_total) / 1000;
                     const potAnt = Number(leituraAnterior.potencia_total) / 1000;
                     const potenciaMediaKw = (potAtual + potAnt) / 2;
