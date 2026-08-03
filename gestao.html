@@ -15,54 +15,59 @@
         .negativo { color: #f85149; }
         .neutro { color: #58a6ff; }
         .section-title { font-size: 1rem; color: #8b949e; margin-top: 15px; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; }
+        select { background: #161b22; color: #e6edf3; border: 1px solid #30363d; padding: 8px 12px; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
     </style>
 </head>
 <body class="dark-theme" style="background-color: #0d1117; color: #e6edf3; font-family: sans-serif; margin: 0; padding: 0;">
     <header style="display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #30363d; background: #161b22;">
-        <div>
+        <div style="display: flex; align-items: center; gap: 15px;">
             <h1 style="color: #58a6ff; font-size: 1.25rem; margin: 0;">📊 Gestão Energética Avançada</h1>
         </div>
-        <a href="index.html" class="btn-voltar" style="background: #21262d; color: #c9d1d9; padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px; text-decoration: none; font-size: 0.9rem;">⬅ Voltar</a>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <label style="color: #8b949e; font-size: 0.85rem;">MÊS:</label>
+            <select id="seletorMes"></select>
+            <a href="index.html" class="btn-voltar" style="background: #21262d; color: #c9d1d9; padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px; text-decoration: none; font-size: 0.9rem;">⬅ Voltar</a>
+        </div>
     </header>
 
     <main style="max-width: 1400px; margin: 20px auto; padding: 0 20px;">
         
-        <!-- Bloco 1: Desempenho do Mês Atual -->
-        <h2 id="titulo-mes" class="section-title">RESUMO DO MÊS ATUAL</h2>
+        <!-- Bloco 1: Desempenho do Mês Selecionado -->
+        <h2 id="titulo-mes" class="section-title">RESUMO DO MÊS</h2>
         <section class="card-grid">
             <div class="card">
                 <div class="label">Geração Solar do Mês</div>
-                <div id="mes-geracao" class="value positivo">...</div>
+                <div id="mes-geracao" class="value positivo">0.00 kWh</div>
             </div>
             <div class="card">
                 <div class="label">Consumo Total do Mês</div>
-                <div id="mes-consumo" class="value negativo">...</div>
+                <div id="mes-consumo" class="value negativo">0.00 kWh</div>
             </div>
             <div class="card">
                 <div class="label">Saldo do Mês (Injetado - Consumido)</div>
-                <div id="mes-saldo" class="value neutro">...</div>
+                <div id="mes-saldo" class="value neutro">0.00 kWh</div>
             </div>
             <div class="card">
                 <div class="label">Economia no Mês (R$)</div>
-                <div id="mes-economia" class="value positivo">...</div>
+                <div id="mes-economia" class="value positivo">R$ 0,00</div>
             </div>
         </section>
 
-        <!-- Bloco 2: Indicadores de Curto Prazo (Dia e Semana) -->
-        <h2 class="section-title">INDICADORES DE CURTO PRAZO</h2>
+        <!-- Bloco 2: Indicadores de Curto Prazo -->
+        <h2 class="section-title">INDICADORES RECENTES</h2>
         <section class="card-grid" style="grid-template-columns: 1fr 1fr;">
             <div class="card" style="border-left: 4px solid #58a6ff;">
-                <div class="label">Saldo do Dia (Hoje)</div>
-                <div id="hoje-saldo" class="value">...</div>
+                <div class="label">Saldo da Última Leitura (Hoje)</div>
+                <div id="hoje-saldo" class="value">0.00 kWh</div>
             </div>
             <div class="card" style="border-left: 4px solid #a371f7;">
-                <div class="label">Saldo da Última Semana (7 dias)</div>
-                <div id="semana-saldo" class="value">...</div>
+                <div class="label">Saldo dos Últimos 7 Dias</div>
+                <div id="semana-saldo" class="value">0.00 kWh</div>
             </div>
         </section>
 
         <!-- Bloco 3: Gráficos Diários -->
-        <h2 class="section-title">ACOMPANHAMENTO DIÁRIO (MÊS ATUAL)</h2>
+        <h2 class="section-title">ACOMPANHAMENTO DIÁRIO</h2>
         <section class="card-grid" style="grid-template-columns: 1fr 1fr;">
             <div class="card">
                 <div class="label" style="margin-bottom: 15px;">Geração x Consumo</div>
