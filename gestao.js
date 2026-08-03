@@ -1,92 +1,122 @@
-const { createClient } = require('@supabase/supabase-js');
+let chartMensal = null;
+let chartDiario = null;
+let chartSaldo = null;
 
-export default async function handler(req, res) {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
+async function carregarGestaoEnergetica() {
     try {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+        const res = await fetch('/api/gestao?v=' + new Date().getTime());
+        const dadosGlobais = await res.json();
 
-        if (!supabaseUrl || !supabaseKey) {
-            return res.status(500).json({ erro: "Variáveis de ambiente do Supabase não configuradas na Vercel." });
+        if (dadosGlobais.erro) {
+            alert("Erro na API: " + dadosGlobais.erro);
+            return;
         }
 
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
-        // Busca as leituras ordenadas cronologicamente
-        const { data: leituras, error } = await supabase
-            .from('telemetria_eletrica')
-            .select('created_at, potencia_total')
-            .order('created_at', { ascending: true });
-
-        if (error) {
-            return res.status(500).json({ erro: "Erro na query do Supabase: " + error.message });
+        if (dadosGlobais.aviso) {
+            console.warn(dadosGlobais.aviso);
+            alert("Aviso: " + dadosGlobais.aviso);
+            return;
+        }
+        
+        if (!dadosGlobais.diarios || dadosGlobais.diarios.length === 0) {
+            alert("Nenhum dado retornado pela API do Supabase.");
+            return;
         }
 
-        if (!leituras || leituras.length === 0) {
-            return res.status(200).json({ aviso: "A tabela 'telemetria_eletrica' está vazia.", diarios: [], mensais: [] });
-        }
+        renderizarPainel(dadosGlobais);
 
-        const agrupadoPorDia = {};
-        const agrupadoPorMes = {};
-        let leituraAnterior = null;
-
-        leituras.forEach(leitura => {
-            const dataObjeto = new Date(leitura.created_at);
-            // Ajuste para o fuso de Mato Grosso (UTC-4)
-            dataObjeto.setHours(dataObjeto.getHours() - 4); 
-            
-            const strDia = dataObjeto.toISOString().split('T')[0]; // YYYY-MM-DD
-            const strMes = strDia.substring(0, 7); // YYYY-MM
-
-            if (!agrupadoPorDia[strDia]) agrupadoPorDia[strDia] = { data: strDia, consumo_kwh: 0, geracao_kwh: 0 };
-            if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_kwh: 0, geracao_kwh: 0 };
-
-            if (leituraAnterior) {
-                const deltaHoras = (dataObjeto.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
-                
-                // Considera intervalos válidos de até 2 horas entre leituras
-                if (deltaHoras > 0 && deltaHoras <= 2) {
-                    const potAtual = Number(leitura.potencia_total) / 1000;
-                    const potAnt = Number(leituraAnterior.potencia_total) / 1000;
-                    const potenciaMediaKw = (potAtual + potAnt) / 2;
-                    
-                    const energiaKwh = Math.abs(potenciaMediaKw * deltaHoras);
-
-                    if (potenciaMediaKw > 0) {
-                        agrupadoPorDia[strDia].consumo_kwh += energiaKwh;
-                        agrupadoPorMes[strMes].consumo_kwh += energiaKwh;
-                    } else if (potenciaMediaKw < 0) {
-                        agrupadoPorDia[strDia].geracao_kwh += energiaKwh;
-                        agrupadoPorMes[strMes].geracao_kwh += energiaKwh;
-                    }
-                }
-            }
-            leituraAnterior = leitura;
-        });
-
-        const TARIFA = 0.85; 
-        const formatarDados = (obj, isMes = false) => {
-            const consumo = obj.consumo_kwh;
-            const geracao = obj.geracao_kwh;
-            return {
-                [isMes ? 'mes' : 'data']: obj[isMes ? 'mes' : 'data'],
-                consumo_kwh: Number(consumo.toFixed(2)),
-                geracao_kwh: Number(geracao.toFixed(2)),
-                saldo_kwh: Number((geracao - consumo).toFixed(2)),
-                economia_rs: Number((geracao * TARIFA).toFixed(2)),
-                custo_rede_rs: Number((consumo * TARIFA).toFixed(2))
-            };
-        };
-
-        const resultadoDiario = Object.values(agrupadoPorDia).map(d => formatarDados(d, false));
-        const resultadoMensal = Object.values(agrupadoPorMes).map(m => formatarDados(m, true));
-
-        return res.status(200).json({ diarios: resultadoDiario, mensais: resultadoMensal });
-
-    } catch (erro) {
-        return res.status(500).json({ erro: "Exceção interna na API: " + erro.message });
+    } catch (err) {
+        console.error("Falha de comunicação:", err);
+        alert("Erro crítico ao carregar dados da API.");
     }
 }
+
+function renderizarPainel(dados) {
+    const diarios = dados.diarios;
+    const mensais = dados.mensais;
+
+    const mesAtualObj = mensais[mensais.length - 1]; 
+    const nomeMes = mesAtualObj.mes.split('-').reverse().join('/'); 
+
+    document.getElementById('titulo-mes').innerText = `RESUMO DO MÊS (${nomeMes})`;
+    document.getElementById('mes-geracao').innerText = `${mesAtualObj.geracao_kwh.toFixed(2)} kWh`;
+    document.getElementById('mes-consumo').innerText = `${mesAtualObj.consumo_kwh.toFixed(2)} kWh`;
+    document.getElementById('mes-saldo').innerText = `${mesAtualObj.saldo_kwh.toFixed(2)} kWh`;
+    document.getElementById('mes-economia').innerText = `R$ ${mesAtualObj.economia_rs.toFixed(2)}`;
+
+    document.getElementById('mes-saldo').style.color = mesAtualObj.saldo_kwh >= 0 ? '#3fb950' : '#f85149';
+
+    const hoje = diarios[diarios.length - 1];
+    const ultimos7Dias = diarios.slice(-7);
+    const saldoSemana = ultimos7Dias.reduce((acc, curr) => acc + curr.saldo_kwh, 0);
+
+    document.getElementById('hoje-saldo').innerText = `${hoje.saldo_kwh.toFixed(2)} kWh`;
+    document.getElementById('hoje-saldo').style.color = hoje.saldo_kwh >= 0 ? '#3fb950' : '#f85149';
+
+    document.getElementById('semana-saldo').innerText = `${saldoSemana.toFixed(2)} kWh`;
+    document.getElementById('semana-saldo').style.color = saldoSemana >= 0 ? '#3fb950' : '#f85149';
+
+    renderizarGraficoMensal(mensais);
+
+    const diasDoMesAtual = diarios.filter(d => d.data.startsWith(mesAtualObj.mes));
+    renderizarGraficosDiarios(diasDoMesAtual);
+}
+
+function renderizarGraficoMensal(mensais) {
+    const ctx = document.getElementById('graficoMensal').getContext('2d');
+    const labels = mensais.map(m => m.mes.split('-').reverse().join('/')); 
+
+    if (chartMensal) chartMensal.destroy();
+
+    chartMensal = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Geração Solar (kWh)', data: mensais.map(m => m.geracao_kwh), backgroundColor: '#3fb950' },
+                { label: 'Consumo (kWh)', data: mensais.map(m => m.consumo_kwh), backgroundColor: '#f85149' }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { grid: { color: '#30363d' } }, x: { grid: { display: false } } },
+            plugins: { legend: { labels: { color: '#e6edf3' } } }
+        }
+    });
+}
+
+function renderizarGraficosDiarios(dados) {
+    const labels = dados.map(d => {
+        const partes = d.data.split('-');
+        return `${partes[2]}/${partes[1]}`; 
+    });
+
+    if (chartDiario) chartDiario.destroy();
+    chartDiario = new Chart(document.getElementById('graficoDiario').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Geração (kWh)', data: dados.map(d => d.geracao_kwh), backgroundColor: '#3fb950' },
+                { label: 'Consumo (kWh)', data: dados.map(d => d.consumo_kwh), backgroundColor: '#f85149' }
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#30363d' } }, x: { grid: { display: false } } }, plugins: { legend: { labels: { color: '#e6edf3`' } } } }
+    });
+
+    if (chartSaldo) chartSaldo.destroy();
+    chartSaldo = new Chart(document.getElementById('graficoSaldo').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Balanço (kWh)',
+                data: dados.map(d => d.saldo_kwh),
+                backgroundColor: dados.map(d => d.saldo_kwh >= 0 ? '#3fb950' : '#f85149')
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#30363d' } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }
+    });
+}
+
+window.onload = carregarGestaoEnergetica;
