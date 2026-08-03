@@ -5,103 +5,78 @@ export default async function handler(req, res) {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
         const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
 
-        if (!supabaseUrl || !supabaseKey) {
-            return res.status(500).json({ erro: 'Variáveis de ambiente ausentes.' });
-        }
-
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        // Busca os dados brutos dos últimos 30 dias para evitar estouro de memória
-        const dataLimite = new Date();
-        dataLimite.setDate(dataLimite.getDate() - 30);
-
+        // Busca todo o histórico ordenado para montar o consolidado Anual e Diário
         const { data: leituras, error } = await supabase
             .from('telemetria_eletrica')
-            .select('created_at, potencia_total, energia_total')
-            .gte('created_at', dataLimite.toISOString())
+            .select('created_at, potencia_total')
             .order('created_at', { ascending: true });
 
-        if (error) {
-            return res.status(500).json({ erro: 'Erro na query: ' + error.message });
-        }
-
-        if (!leituras || leituras.length === 0) {
-            return res.status(200).json([]); // Retorna array vazio caso não haja histórico
-        }
+        if (error) return res.status(500).json({ erro: error.message });
+        if (!leituras || leituras.length === 0) return res.status(200).json({ diarios: [], mensais: [] });
 
         const agrupadoPorDia = {};
+        const agrupadoPorMes = {};
         let leituraAnterior = null;
-        
-        // Formatador para o fuso horário de MT, garantindo o agrupamento exato por data local
-        const formatter = new Intl.DateTimeFormat('en-CA', { 
-            timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit' 
-        });
+
+        // Fuso de Mato Grosso para evitar cortes de dia incorretos
+        const fmtDia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit' });
+        const fmtMes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit' });
 
         leituras.forEach(leitura => {
-            const dataDia = formatter.format(new Date(leitura.created_at)); // Formato: YYYY-MM-DD
+            const dataObjeto = new Date(leitura.created_at);
+            const strDia = fmtDia.format(dataObjeto); // YYYY-MM-DD
+            const strMes = fmtMes.format(dataObjeto); // YYYY-MM
 
-            if (!agrupadoPorDia[dataDia]) {
-                agrupadoPorDia[dataDia] = {
-                    data: dataDia,
-                    consumo_kwh: 0,
-                    geracao_kwh: 0,
-                    energia_min: leitura.energia_total,
-                    energia_max: leitura.energia_total
-                };
-            }
+            if (!agrupadoPorDia[strDia]) agrupadoPorDia[strDia] = { data: strDia, consumo_kwh: 0, geracao_kwh: 0 };
+            if (!agrupadoPorMes[strMes]) agrupadoPorMes[strMes] = { mes: strMes, consumo_kwh: 0, geracao_kwh: 0 };
 
-            agrupadoPorDia[dataDia].energia_max = leitura.energia_total;
-
-            // INTEGRAÇÃO NUMÉRICA: Separando Geração e Consumo pelo sinal da Potência
             if (leituraAnterior) {
-                const tempoAtual = new Date(leitura.created_at).getTime();
-                const tempoAnterior = new Date(leituraAnterior.created_at).getTime();
-                const deltaHoras = (tempoAtual - tempoAnterior) / (1000 * 60 * 60); // Diferença em horas
-
-                // Filtro para ignorar deltas irreais (ex: medidor desligado por várias horas)
+                const deltaHoras = (dataObjeto.getTime() - new Date(leituraAnterior.created_at).getTime()) / 3600000;
+                
                 if (deltaHoras > 0 && deltaHoras <= 2) {
-                    // Correção da escala: O banco salva em Watts, convertemos para kW
-                    const potenciaKw = leitura.potencia_total / 1000; 
-                    const energiaKwhIntervalo = Math.abs(potenciaKw * deltaHoras);
+                    // Integração Trapezoidal (Média entre a leitura atual e anterior) dividida por 1000 para kW
+                    const potAtual = leitura.potencia_total / 1000;
+                    const potAnt = leituraAnterior.potencia_total / 1000;
+                    const potenciaMediaKw = (potAtual + potAnt) / 2;
+                    
+                    const energiaKwh = Math.abs(potenciaMediaKw * deltaHoras);
 
-                    if (potenciaKw > 0) {
-                        agrupadoPorDia[dataDia].consumo_kwh += energiaKwhIntervalo;
-                    } else if (potenciaKw < 0) {
-                        agrupadoPorDia[dataDia].geracao_kwh += energiaKwhIntervalo;
+                    if (potenciaMediaKw > 0) {
+                        agrupadoPorDia[strDia].consumo_kwh += energiaKwh;
+                        agrupadoPorMes[strMes].consumo_kwh += energiaKwh;
+                    } else if (potenciaMediaKw < 0) {
+                        agrupadoPorDia[strDia].geracao_kwh += energiaKwh;
+                        agrupadoPorMes[strMes].geracao_kwh += energiaKwh;
                     }
                 }
             }
             leituraAnterior = leitura;
         });
 
-        // TARIFA BASE ESTIMADA (Pode ser ajustada de acordo com a Energisa)
         const TARIFA = 0.85; 
-
-        // Compilando o JSON final exigido pela tela gestao.html
-        const resultadoFinal = Object.values(agrupadoPorDia).map(dia => {
-            const consumoFinal = dia.consumo_kwh;
-            const geracaoFinal = dia.geracao_kwh;
-            
-            const saldo = geracaoFinal - consumoFinal;
-            const economia = geracaoFinal * TARIFA;
-            const custoRede = consumoFinal * TARIFA;
-            const autossuficiencia = geracaoFinal > 0 ? Math.min((consumoFinal / geracaoFinal) * 100, 100) : 0;
-
+        const formatarDados = (obj, isMes = false) => {
+            const consumo = obj.consumo_kwh;
+            const geracao = obj.geracao_kwh;
+            const autossuficiencia = geracao > 0 ? Math.min((geracao / consumo) * 100, 100) : 0;
             return {
-                data: dia.data,
-                consumo_kwh: Number(consumoFinal.toFixed(2)),
-                geracao_kwh: Number(geracaoFinal.toFixed(2)),
-                saldo_kwh: Number(saldo.toFixed(2)),
-                energia_rede_kwh: Number(consumoFinal.toFixed(2)),
-                economia_rs: Number(economia.toFixed(2)),
-                custo_rede_rs: Number(custoRede.toFixed(2)),
+                [isMes ? 'mes' : 'data']: obj[isMes ? 'mes' : 'data'],
+                consumo_kwh: Number(consumo.toFixed(2)),
+                geracao_kwh: Number(geracao.toFixed(2)),
+                saldo_kwh: Number((geracao - consumo).toFixed(2)),
+                economia_rs: Number((geracao * TARIFA).toFixed(2)),
+                custo_rede_rs: Number((consumo * TARIFA).toFixed(2)),
                 autossuficiencia: Number(autossuficiencia.toFixed(1))
             };
-        });
+        };
 
-        return res.status(200).json(resultadoFinal);
+        const resultadoDiario = Object.values(agrupadoPorDia).map(d => formatarDados(d, false));
+        const resultadoMensal = Object.values(agrupadoPorMes).map(m => formatarDados(m, true));
+
+        return res.status(200).json({ diarios: resultadoDiario, mensais: resultadoMensal });
 
     } catch (erro) {
-        return res.status(500).json({ erro: 'Exceção Crítica: ' + erro.message });
+        return res.status(500).json({ erro: erro.message });
     }
 }
