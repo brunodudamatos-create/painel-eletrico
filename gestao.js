@@ -1,81 +1,91 @@
-let dadosGlobais = { diarios: [], mensais: [] };
-let chartAnual = null;
+let chartMensal = null;
 let chartDiario = null;
 let chartSaldo = null;
 
 async function carregarGestaoEnergetica() {
     try {
-        // O parâmetro 'v' força o navegador a ignorar o cache local
+        // 'v' evita o cache para garantir que sempre peguemos o dado mais atual da Vercel
         const res = await fetch('/api/gestao?v=' + new Date().getTime());
-        dadosGlobais = await res.json();
-        
-        console.log("Resposta da API:", dadosGlobais); // Para vermos no Console (F12)
+        const dadosGlobais = await res.json();
 
-        // Validação de erro: Se vier no formato antigo (Array) ou houver erro
         if (Array.isArray(dadosGlobais)) {
-            alert("A API da Vercel ainda está retornando a versão antiga. Aguarde o fim do Deploy.");
+            console.warn("API retornou formato antigo. Aguarde o fim do deploy na Vercel.");
             return;
         }
 
         if (dadosGlobais.erro) {
-            alert("Erro reportado pelo Supabase: " + dadosGlobais.erro);
+            alert("Erro reportado pela API: " + dadosGlobais.erro);
             return;
         }
         
         if (!dadosGlobais.diarios || dadosGlobais.diarios.length === 0) {
-            console.warn("Nenhum dado encontrado no banco para gerar os gráficos.");
+            console.warn("Nenhum dado encontrado no banco.");
             return;
         }
 
-        // Configura o seletor para o mês da última leitura validada
-        const ultimoDia = dadosGlobais.diarios[dadosGlobais.diarios.length - 1].data; 
-        const mesAtual = ultimoDia.substring(0, 7); 
-        
-        const inputMes = document.getElementById('mesFiltro');
-        inputMes.value = mesAtual;
-        
-        // Dispara o recálculo quando o usuário mudar o calendário
-        inputMes.addEventListener('change', () => renderizarPainel(inputMes.value));
-
-        // Plota a tela inicial
-        renderizarPainel(mesAtual);
-        renderizarGraficoAnual(); 
+        renderizarPainel(dadosGlobais);
 
     } catch (err) {
         console.error("Falha de comunicação com a API:", err);
-        alert("Erro de conexão com a API. Verifique o console.");
     }
 }
 
-function renderizarPainel(mesFiltro) {
-    const dadosFiltrados = dadosGlobais.diarios.filter(d => d.data.startsWith(mesFiltro));
+function renderizarPainel(dados) {
+    const diarios = dados.diarios;
+    const mensais = dados.mensais;
 
-    const geracaoTotal = dadosFiltrados.reduce((acc, curr) => acc + curr.geracao_kwh, 0);
-    const consumoTotal = dadosFiltrados.reduce((acc, curr) => acc + curr.consumo_kwh, 0);
-    const saldoTotal = dadosFiltrados.reduce((acc, curr) => acc + curr.saldo_kwh, 0);
-    const economiaTotal = dadosFiltrados.reduce((acc, curr) => acc + curr.economia_rs, 0);
+    // --- 1. DADOS DO MÊS ATUAL (Pega o último mês gravado no banco) ---
+    const mesAtualObj = mensais[mensais.length - 1]; // Ex: { mes: '2026-08', geracao_kwh: 50, ... }
+    const nomeMes = mesAtualObj.mes.split('-').reverse().join('/'); // Formata de 2026-08 para 08/2026
 
-    document.getElementById('val-geracao').innerText = `${geracaoTotal.toFixed(2)} kWh`;
-    document.getElementById('val-consumo').innerText = `${consumoTotal.toFixed(2)} kWh`;
-    document.getElementById('val-saldo').innerText = `${saldoTotal.toFixed(2)} kWh`;
-    document.getElementById('val-economia').innerText = `R$ ${economiaTotal.toFixed(2)}`;
+    document.getElementById('titulo-mes').innerText = `RESUMO DO MÊS (${nomeMes})`;
+    document.getElementById('mes-geracao').innerText = `${mesAtualObj.geracao_kwh.toFixed(2)} kWh`;
+    document.getElementById('mes-consumo').innerText = `${mesAtualObj.consumo_kwh.toFixed(2)} kWh`;
+    document.getElementById('mes-saldo').innerText = `${mesAtualObj.saldo_kwh.toFixed(2)} kWh`;
+    document.getElementById('mes-economia').innerText = `R$ ${mesAtualObj.economia_rs.toFixed(2)}`;
 
-    renderizarGraficosDiarios(dadosFiltrados);
+    // Colorir o saldo do mês (Verde se positivo, Vermelho se negativo)
+    const corSaldoMes = mesAtualObj.saldo_kwh >= 0 ? '#3fb950' : '#f85149';
+    document.getElementById('mes-saldo').style.color = corSaldoMes;
+
+    // --- 2. INDICADORES DE CURTO PRAZO (Hoje e Últimos 7 dias) ---
+    const hoje = diarios[diarios.length - 1];
+    
+    // Pega os últimos 7 registros diários do array e soma o saldo
+    const ultimos7Dias = diarios.slice(-7);
+    const saldoSemana = ultimos7Dias.reduce((acc, curr) => acc + curr.saldo_kwh, 0);
+
+    document.getElementById('hoje-saldo').innerText = `${hoje.saldo_kwh.toFixed(2)} kWh`;
+    document.getElementById('hoje-saldo').style.color = hoje.saldo_kwh >= 0 ? '#3fb950' : '#f85149';
+
+    document.getElementById('semana-saldo').innerText = `${saldoSemana.toFixed(2)} kWh`;
+    document.getElementById('semana-saldo').style.color = saldoSemana >= 0 ? '#3fb950' : '#f85149';
+
+    // --- 3. RENDERIZAR GRÁFICOS ---
+    
+    // Gráfico Histórico Mensal (Usa todos os meses do banco)
+    renderizarGraficoMensal(mensais);
+
+    // Gráficos Diários (Filtra apenas os dias que pertencem ao mês atual)
+    const diasDoMesAtual = diarios.filter(d => d.data.startsWith(mesAtualObj.mes));
+    renderizarGraficosDiarios(diasDoMesAtual);
 }
 
-function renderizarGraficoAnual() {
-    const ctx = document.getElementById('graficoAnual').getContext('2d');
-    const labels = dadosGlobais.mensais.map(m => m.mes); 
+function renderizarGraficoMensal(mensais) {
+    const ctx = document.getElementById('graficoMensal').getContext('2d');
+    
+    // Formata o eixo X (Ex: "07/2026", "08/2026")
+    const labels = mensais.map(m => m.mes.split('-').reverse().join('/')); 
 
-    if (chartAnual) chartAnual.destroy();
+    if (chartMensal) chartMensal.destroy();
 
-    chartAnual = new Chart(ctx, {
+    chartMensal = new Chart(ctx, {
         type: 'bar',
         data: {
             labels,
             datasets: [
-                { label: 'Geração Solar (kWh)', data: dadosGlobais.mensais.map(m => m.geracao_kwh), backgroundColor: '#3fb950' },
-                { label: 'Consumo (kWh)', data: dadosGlobais.mensais.map(m => m.consumo_kwh), backgroundColor: '#f85149' }
+                { label: 'Geração Solar (kWh)', data: mensais.map(m => m.geracao_kwh), backgroundColor: '#3fb950' },
+                { label: 'Consumo (kWh)', data: mensais.map(m => m.consumo_kwh), backgroundColor: '#f85149' }
             ]
         },
         options: {
@@ -87,9 +97,10 @@ function renderizarGraficoAnual() {
 }
 
 function renderizarGraficosDiarios(dados) {
+    // Formata o eixo X (Ex: "02/08")
     const labels = dados.map(d => {
         const partes = d.data.split('-');
-        return `${partes[2]}/${partes[1]}`; // Formato DD/MM
+        return `${partes[2]}/${partes[1]}`; 
     });
 
     if (chartDiario) chartDiario.destroy();
@@ -120,4 +131,5 @@ function renderizarGraficosDiarios(dados) {
     });
 }
 
+// Inicia a execução ao carregar a página
 window.onload = carregarGestaoEnergetica;
