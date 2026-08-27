@@ -4,21 +4,6 @@ const TARIFA_KWH = 0.899;
 const PAGE_SIZE = 1000;
 const TIMEZONE = 'America/Cuiaba';
 
-// ============================================================
-// ESCALA DOS CONTADORES TUYA
-//
-// Os valores armazenados pelo medidor estão em centésimos de kWh.
-//
-// Exemplo:
-// 1630371 - 830897 = 799474
-//
-// 799474 / 100 = 7994.74 kWh
-//
-// Portanto NÃO dividir por 1000.
-// ============================================================
-
-const FATOR_ENERGIA = 100;
-
 export default async function handler(req, res) {
 
     res.setHeader(
@@ -46,9 +31,9 @@ export default async function handler(req, res) {
         if (!supabaseUrl || !supabaseKey) {
 
             return res.status(500).json({
-                erro:
-                    'Variáveis de ambiente do Supabase não configuradas.'
+                erro: 'Variáveis de ambiente do Supabase não configuradas.'
             });
+
         }
 
         const supabase = createClient(
@@ -56,19 +41,15 @@ export default async function handler(req, res) {
             supabaseKey
         );
 
+
         // ============================================================
         // 2. BUSCAR TODAS AS LEITURAS
         //
-        // Utilizamos timestamp como referência da medição.
-        //
-        // Não utilizamos created_at.
-        //
-        // O Supabase pode limitar o retorno a 1.000 registros,
-        // portanto fazemos paginação.
+        // A data da medição é timestamp.
+        // Não utilizar created_at para os cálculos.
         // ============================================================
 
         let todasLeituras = [];
-
         let inicio = 0;
 
         while (true) {
@@ -80,99 +61,64 @@ export default async function handler(req, res) {
                 data,
                 error
             } = await supabase
-
                 .from('telemetria_eletrica')
-
                 .select(`
                     timestamp,
                     energia_total,
                     energia_gerada_total
                 `)
-
-                .not(
-                    'timestamp',
-                    'is',
-                    null
-                )
-
-                .order(
-                    'timestamp',
-                    {
-                        ascending: true
-                    }
-                )
-
-                .range(
-                    inicio,
-                    fim
-                );
+                .not('timestamp', 'is', null)
+                .order('timestamp', {
+                    ascending: true
+                })
+                .range(inicio, fim);
 
             if (error) {
 
                 return res.status(500).json({
-
                     erro:
                         'Erro ao consultar telemetria_eletrica: ' +
                         error.message
-
                 });
+
             }
 
-            if (
-                !data ||
-                data.length === 0
-            ) {
-
+            if (!data || data.length === 0) {
                 break;
             }
 
             todasLeituras =
                 todasLeituras.concat(data);
 
-            if (
-                data.length < PAGE_SIZE
-            ) {
-
+            if (data.length < PAGE_SIZE) {
                 break;
             }
 
             inicio += PAGE_SIZE;
         }
 
+
         // ============================================================
-        // 3. VERIFICAR SE EXISTEM DADOS
+        // 3. SEM DADOS
         // ============================================================
 
-        if (
-            todasLeituras.length === 0
-        ) {
+        if (todasLeituras.length === 0) {
 
             return res.status(200).json({
 
-                tarifa_kwh:
-                    TARIFA_KWH,
-
-                fator_energia:
-                    FATOR_ENERGIA,
+                tarifa_kwh: TARIFA_KWH,
 
                 diarios: [],
 
                 mensais: [],
 
                 resumo: {
-
                     consumo_kwh: 0,
-
                     geracao_kwh: 0,
-
                     saldo_kwh: 0,
-
                     economia_rs: 0,
-
                     custo_rede_rs: 0,
-
                     valor_geracao_rs: 0
-
                 },
 
                 fonte_energia:
@@ -187,48 +133,33 @@ export default async function handler(req, res) {
                         'energia_gerada_total / reverse_energy_total',
 
                     unidade_origem:
-                        'centésimos de kWh',
-
-                    fator_conversao:
-                        'valor / 100',
+                        'Wh',
 
                     unidade_saida:
                         'kWh'
-
                 },
 
                 diagnostico: {
-
-                    leituras_consideradas:
-                        0
-
+                    leituras_consideradas: 0
                 }
 
             });
+
         }
+
 
         // ============================================================
         // 4. FORMATAÇÃO DE DATA
-        //
-        // A data utilizada para agrupamento é a data do timestamp
-        // convertida para o fuso de Cuiabá.
         // ============================================================
 
         const formatarDia =
             new Intl.DateTimeFormat(
                 'en-CA',
                 {
-                    timeZone:
-                        TIMEZONE,
-
-                    year:
-                        'numeric',
-
-                    month:
-                        '2-digit',
-
-                    day:
-                        '2-digit'
+                    timeZone: TIMEZONE,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
                 }
             );
 
@@ -236,62 +167,42 @@ export default async function handler(req, res) {
             new Intl.DateTimeFormat(
                 'en-CA',
                 {
-                    timeZone:
-                        TIMEZONE,
-
-                    year:
-                        'numeric',
-
-                    month:
-                        '2-digit'
+                    timeZone: TIMEZONE,
+                    year: 'numeric',
+                    month: '2-digit'
                 }
             );
 
+
         // ============================================================
-        // 5. ESTRUTURAS DE AGRUPAMENTO
+        // 5. ESTRUTURAS
         // ============================================================
 
         const diarios = {};
         const mensais = {};
 
+
         // ============================================================
-        // 6. PROCESSAMENTO DOS CONTADORES CUMULATIVOS
-        //
-        // IMPORTANTE:
-        //
-        // energia_total
-        //     = contador acumulado de consumo
-        //
-        // energia_gerada_total
-        //     = contador acumulado de geração
-        //
-        // Para obter a energia do intervalo:
-        //
-        // leitura atual - leitura anterior
-        //
-        // Depois:
-        //
-        // delta / 100 = kWh
-        //
-        // NÃO /1000.
+        // 6. CONTADORES
         // ============================================================
 
         let leituraAnterior = null;
 
+        let leiturasComConsumo = 0;
         let leiturasComGeracao = 0;
 
         let leiturasSemGeracao = 0;
 
         let deltasInvalidos = 0;
 
+        let deltasGeracaoSemBase = 0;
+
+
         // ============================================================
-        // PROCESSAR LEITURAS
+        // 7. PROCESSAMENTO
         // ============================================================
 
-        for (
-            const leitura
-            of todasLeituras
-        ) {
+        for (const leitura of todasLeituras) {
 
             const timestamp =
                 leitura.timestamp;
@@ -308,7 +219,6 @@ export default async function handler(req, res) {
                     dataObjeto.getTime()
                 )
             ) {
-
                 continue;
             }
 
@@ -322,6 +232,7 @@ export default async function handler(req, res) {
                     dataObjeto
                 );
 
+
             // ========================================================
             // INICIALIZA DIA
             // ========================================================
@@ -330,17 +241,16 @@ export default async function handler(req, res) {
 
                 diarios[dia] = {
 
-                    data:
-                        dia,
+                    data: dia,
 
-                    consumo_kwh:
-                        0,
+                    consumo_kwh: 0,
 
-                    geracao_kwh:
-                        0
+                    geracao_kwh: 0
 
                 };
+
             }
+
 
             // ========================================================
             // INICIALIZA MÊS
@@ -350,148 +260,186 @@ export default async function handler(req, res) {
 
                 mensais[mes] = {
 
-                    mes:
-                        mes,
+                    mes: mes,
 
-                    consumo_kwh:
-                        0,
+                    consumo_kwh: 0,
 
-                    geracao_kwh:
-                        0
+                    geracao_kwh: 0
 
                 };
+
             }
+
 
             // ========================================================
             // PRIMEIRA LEITURA
-            //
-            // Não existe leitura anterior para calcular o delta.
             // ========================================================
 
             if (!leituraAnterior) {
 
-                leituraAnterior =
-                    leitura;
+                leituraAnterior = leitura;
 
                 continue;
+
             }
 
+
             // ========================================================
-            // CONTADORES ATUAIS
+            // CONSUMO
+            //
+            // IMPORTANTE:
+            // Não usar Number(null).
+            //
+            // Null NÃO é zero.
             // ========================================================
 
             const consumoAtual =
-                Number(
-                    leitura.energia_total
-                );
-
-            const geracaoAtual =
-                Number(
-                    leitura.energia_gerada_total
-                );
-
-            // ========================================================
-            // CONTADORES ANTERIORES
-            // ========================================================
+                leitura.energia_total !== null &&
+                leitura.energia_total !== undefined &&
+                leitura.energia_total !== ''
+                    ? Number(
+                        leitura.energia_total
+                    )
+                    : null;
 
             const consumoAnterior =
-                Number(
-                    leituraAnterior.energia_total
-                );
+                leituraAnterior.energia_total !== null &&
+                leituraAnterior.energia_total !== undefined &&
+                leituraAnterior.energia_total !== ''
+                    ? Number(
+                        leituraAnterior.energia_total
+                    )
+                    : null;
+
+
+            // ========================================================
+            // GERAÇÃO
+            //
+            // Só calcula geração quando EXISTEM dois valores válidos.
+            //
+            // Isso é fundamental porque antes de 08/08 a geração
+            // estava NULL.
+            // ========================================================
+
+            const geracaoAtual =
+                leitura.energia_gerada_total !== null &&
+                leitura.energia_gerada_total !== undefined &&
+                leitura.energia_gerada_total !== ''
+                    ? Number(
+                        leitura.energia_gerada_total
+                    )
+                    : null;
 
             const geracaoAnterior =
-                Number(
-                    leituraAnterior.energia_gerada_total
-                );
+                leituraAnterior.energia_gerada_total !== null &&
+                leituraAnterior.energia_gerada_total !== undefined &&
+                leituraAnterior.energia_gerada_total !== ''
+                    ? Number(
+                        leituraAnterior.energia_gerada_total
+                    )
+                    : null;
+
 
             // ========================================================
-            // VALIDAR NÚMEROS
+            // VALIDAR CONSUMO
             // ========================================================
+
+            let consumoKwh = 0;
 
             if (
-
-                !Number.isFinite(
-                    consumoAtual
-                ) ||
-
-                !Number.isFinite(
-                    geracaoAtual
-                ) ||
-
-                !Number.isFinite(
-                    consumoAnterior
-                ) ||
-
-                !Number.isFinite(
-                    geracaoAnterior
-                )
-
+                Number.isFinite(consumoAtual) &&
+                Number.isFinite(consumoAnterior)
             ) {
+
+                let deltaConsumoWh =
+                    consumoAtual -
+                    consumoAnterior;
+
+                // ----------------------------------------------------
+                // Proteção contra reset
+                // ----------------------------------------------------
+
+                if (deltaConsumoWh < 0) {
+
+                    deltaConsumoWh = 0;
+
+                    deltasInvalidos++;
+
+                }
+
+                // ----------------------------------------------------
+                // Wh -> kWh
+                // ----------------------------------------------------
+
+                consumoKwh =
+                    deltaConsumoWh / 1000;
+
+                if (consumoKwh > 0) {
+                    leiturasComConsumo++;
+                }
+
+            } else {
 
                 deltasInvalidos++;
 
-                leituraAnterior =
-                    leitura;
-
-                continue;
             }
 
-            // ========================================================
-            // CALCULAR DELTA DOS CONTADORES
-            // ========================================================
-
-            let deltaConsumo =
-                consumoAtual -
-                consumoAnterior;
-
-            let deltaGeracao =
-                geracaoAtual -
-                geracaoAnterior;
 
             // ========================================================
-            // PROTEÇÃO CONTRA RESET DO CONTADOR
-            //
-            // Se o valor atual for menor que o anterior,
-            // não contabilizamos energia negativa.
+            // VALIDAR GERAÇÃO
             // ========================================================
+
+            let geracaoKwh = 0;
 
             if (
-                deltaConsumo < 0
+                Number.isFinite(geracaoAtual) &&
+                Number.isFinite(geracaoAnterior)
             ) {
 
-                deltaConsumo = 0;
+                let deltaGeracaoWh =
+                    geracaoAtual -
+                    geracaoAnterior;
 
-                deltasInvalidos++;
+                // ----------------------------------------------------
+                // Proteção contra reset
+                // ----------------------------------------------------
+
+                if (deltaGeracaoWh < 0) {
+
+                    deltaGeracaoWh = 0;
+
+                    deltasInvalidos++;
+
+                }
+
+                // ----------------------------------------------------
+                // Wh -> kWh
+                // ----------------------------------------------------
+
+                geracaoKwh =
+                    deltaGeracaoWh / 1000;
+
+                if (geracaoKwh > 0) {
+
+                    leiturasComGeracao++;
+
+                } else {
+
+                    leiturasSemGeracao++;
+
+                }
+
+            } else {
+
+                // Não considerar NULL como zero.
+                // Não inventar geração antes de existir uma base válida.
+
+                deltasGeracaoSemBase++;
+
+                leiturasSemGeracao++;
+
             }
 
-            if (
-                deltaGeracao < 0
-            ) {
-
-                deltaGeracao = 0;
-
-                deltasInvalidos++;
-            }
-
-            // ========================================================
-            // CONVERSÃO CORRETA PARA kWh
-            //
-            // TUYA:
-            //
-            // 1 unidade armazenada = 0,01 kWh
-            //
-            // Portanto:
-            //
-            // delta / 100
-            // ========================================================
-
-            const consumoKwh =
-                deltaConsumo /
-                FATOR_ENERGIA;
-
-            const geracaoKwh =
-                deltaGeracao /
-                FATOR_ENERGIA;
 
             // ========================================================
             // ACUMULAR NO DIA
@@ -503,6 +451,7 @@ export default async function handler(req, res) {
             diarios[dia].geracao_kwh +=
                 geracaoKwh;
 
+
             // ========================================================
             // ACUMULAR NO MÊS
             // ========================================================
@@ -513,31 +462,19 @@ export default async function handler(req, res) {
             mensais[mes].geracao_kwh +=
                 geracaoKwh;
 
-            // ========================================================
-            // DIAGNÓSTICO
-            // ========================================================
-
-            if (
-                geracaoKwh > 0
-            ) {
-
-                leiturasComGeracao++;
-
-            } else {
-
-                leiturasSemGeracao++;
-            }
 
             // ========================================================
-            // ATUALIZA LEITURA ANTERIOR
+            // PRÓXIMA LEITURA
             // ========================================================
 
             leituraAnterior =
                 leitura;
+
         }
 
+
         // ============================================================
-        // 7. FUNÇÃO DE CÁLCULO FINANCEIRO
+        // 8. CÁLCULO FINANCEIRO
         // ============================================================
 
         function calcularIndicadores(
@@ -545,72 +482,44 @@ export default async function handler(req, res) {
             geracao
         ) {
 
-            // --------------------------------------------------------
-            // SALDO
-            //
-            // positivo = geração maior que consumo
-            // negativo = consumo maior que geração
-            // --------------------------------------------------------
-
             const saldo =
                 geracao -
                 consumo;
 
-            // --------------------------------------------------------
-            // VALOR ECONÔMICO DA GERAÇÃO
-            // --------------------------------------------------------
 
             const valorGeracao =
                 geracao *
                 TARIFA_KWH;
 
-            // --------------------------------------------------------
-            // CUSTO DA ENERGIA CONSUMIDA
-            // --------------------------------------------------------
 
             const custoRede =
                 consumo *
                 TARIFA_KWH;
 
-            // --------------------------------------------------------
-            // ECONOMIA / SALDO FINANCEIRO
-            // --------------------------------------------------------
 
             const economia =
                 saldo *
                 TARIFA_KWH;
 
-            // --------------------------------------------------------
-            // PERCENTUAL DA GERAÇÃO SOBRE O CONSUMO
-            // --------------------------------------------------------
 
             let percentualGeracao =
                 0;
 
-            if (
-                consumo > 0
-            ) {
+            if (consumo > 0) {
 
                 percentualGeracao =
                     (
                         geracao /
                         consumo
-                    ) *
-                    100;
+                    ) * 100;
+
             }
 
-            // --------------------------------------------------------
-            // AUTOSSUFICIÊNCIA
-            //
-            // Limitada a 100%.
-            // --------------------------------------------------------
 
             let autossuficiencia =
                 0;
 
-            if (
-                consumo > 0
-            ) {
+            if (consumo > 0) {
 
                 autossuficiencia =
                     Math.min(
@@ -618,14 +527,11 @@ export default async function handler(req, res) {
                         (
                             geracao /
                             consumo
-                        ) *
-                        100
+                        ) * 100
                     );
+
             }
 
-            // --------------------------------------------------------
-            // RETORNO
-            // --------------------------------------------------------
 
             return {
 
@@ -670,152 +576,127 @@ export default async function handler(req, res) {
                     )
 
             };
+
         }
 
+
         // ============================================================
-        // 8. GERAR RESULTADO DIÁRIO
+        // 9. RESULTADO DIÁRIO
         // ============================================================
 
         const resultadoDiario =
             Object.values(diarios)
-
                 .sort(
                     (a, b) =>
                         a.data.localeCompare(
                             b.data
                         )
                 )
+                .map(dia => {
 
-                .map(
-                    dia => {
+                    return {
 
-                        return {
+                        data:
+                            dia.data,
 
-                            data:
-                                dia.data,
+                        ...calcularIndicadores(
+                            dia.consumo_kwh,
+                            dia.geracao_kwh
+                        )
 
-                            ...calcularIndicadores(
+                    };
 
-                                dia.consumo_kwh,
+                });
 
-                                dia.geracao_kwh
-
-                            )
-
-                        };
-                    }
-                );
 
         // ============================================================
-        // 9. GERAR RESULTADO MENSAL
+        // 10. RESULTADO MENSAL
         // ============================================================
 
         const resultadoMensal =
             Object.values(mensais)
-
                 .sort(
                     (a, b) =>
                         a.mes.localeCompare(
                             b.mes
                         )
                 )
+                .map(mes => {
 
-                .map(
-                    mes => {
+                    return {
 
-                        return {
+                        mes:
+                            mes.mes,
 
-                            mes:
-                                mes.mes,
+                        ...calcularIndicadores(
+                            mes.consumo_kwh,
+                            mes.geracao_kwh
+                        )
 
-                            ...calcularIndicadores(
+                    };
 
-                                mes.consumo_kwh,
+                });
 
-                                mes.geracao_kwh
-
-                            )
-
-                        };
-                    }
-                );
 
         // ============================================================
-        // 10. RESUMO GERAL
+        // 11. RESUMO
         // ============================================================
 
         const consumoTotal =
             resultadoMensal.reduce(
-
-                (
-                    total,
-                    item
-                ) =>
+                (total, item) =>
                     total +
                     item.consumo_kwh,
-
                 0
             );
+
 
         const geracaoTotal =
             resultadoMensal.reduce(
-
-                (
-                    total,
-                    item
-                ) =>
+                (total, item) =>
                     total +
                     item.geracao_kwh,
-
                 0
             );
 
+
         const resumo =
             calcularIndicadores(
-
                 consumoTotal,
-
                 geracaoTotal
-
             );
 
+
         // ============================================================
-        // 11. RETORNO DA API
+        // 12. DIAGNÓSTICO DOS CONTADORES
+        // ============================================================
+
+        const primeiraLeitura =
+            todasLeituras[0];
+
+        const ultimaLeitura =
+            todasLeituras[
+                todasLeituras.length - 1
+            ];
+
+
+        // ============================================================
+        // 13. RETORNO
         // ============================================================
 
         return res.status(200).json({
 
-            // --------------------------------------------------------
-            // TARIFA
-            // --------------------------------------------------------
-
             tarifa_kwh:
                 TARIFA_KWH,
 
-            // --------------------------------------------------------
-            // FATOR DO MEDIDOR
-            // --------------------------------------------------------
-
-            fator_energia:
-                FATOR_ENERGIA,
-
-            // --------------------------------------------------------
-            // DADOS DIÁRIOS
-            // --------------------------------------------------------
 
             diarios:
                 resultadoDiario,
 
-            // --------------------------------------------------------
-            // DADOS MENSAIS
-            // --------------------------------------------------------
 
             mensais:
                 resultadoMensal,
 
-            // --------------------------------------------------------
-            // RESUMO
-            // --------------------------------------------------------
 
             resumo: {
 
@@ -839,16 +720,10 @@ export default async function handler(req, res) {
 
             },
 
-            // --------------------------------------------------------
-            // FONTE
-            // --------------------------------------------------------
 
             fonte_energia:
                 'telemetria_eletrica',
 
-            // --------------------------------------------------------
-            // CONTADORES TUYA
-            // --------------------------------------------------------
 
             contadores_tuya: {
 
@@ -859,24 +734,21 @@ export default async function handler(req, res) {
                     'energia_gerada_total / reverse_energy_total',
 
                 unidade_origem:
-                    'centésimos de kWh',
-
-                fator_conversao:
-                    'valor / 100',
+                    'Wh',
 
                 unidade_saida:
                     'kWh'
 
             },
 
-            // --------------------------------------------------------
-            // DIAGNÓSTICO
-            // --------------------------------------------------------
 
             diagnostico: {
 
                 leituras_consideradas:
                     todasLeituras.length,
+
+                leituras_com_consumo:
+                    leiturasComConsumo,
 
                 leituras_com_geracao:
                     leiturasComGeracao,
@@ -884,26 +756,35 @@ export default async function handler(req, res) {
                 leituras_sem_geracao:
                     leiturasSemGeracao,
 
+                deltas_geracao_sem_base:
+                    deltasGeracaoSemBase,
+
                 deltas_invalidos:
                     deltasInvalidos,
 
+                contador_consumo_inicial:
+                    primeiraLeitura?.energia_total ??
+                    null,
+
+                contador_consumo_final:
+                    ultimaLeitura?.energia_total ??
+                    null,
+
+                contador_geracao_inicial:
+                    primeiraLeitura?.energia_gerada_total ??
+                    null,
+
+                contador_geracao_final:
+                    ultimaLeitura?.energia_gerada_total ??
+                    null,
+
                 primeiro_timestamp:
-
-                    todasLeituras.length > 0
-
-                        ? todasLeituras[0].timestamp
-
-                        : null,
+                    primeiraLeitura?.timestamp ??
+                    null,
 
                 ultimo_timestamp:
-
-                    todasLeituras.length > 0
-
-                        ? todasLeituras[
-                            todasLeituras.length - 1
-                        ].timestamp
-
-                        : null,
+                    ultimaLeitura?.timestamp ??
+                    null,
 
                 total_dias:
                     resultadoDiario.length,
@@ -929,5 +810,7 @@ export default async function handler(req, res) {
                 erro.message
 
         });
+
     }
+
 }
