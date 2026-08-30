@@ -6,17 +6,14 @@ const TIMEZONE = 'America/Cuiaba';
 
 export default async function handler(req, res) {
 
-    res.setHeader(
-        'Cache-Control',
-        'no-store, no-cache, must-revalidate, proxy-revalidate'
-    );
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
 
     try {
 
         // ============================================================
-        // 1. SUPABASE
+        // SUPABASE
         // ============================================================
 
         const supabaseUrl =
@@ -39,16 +36,7 @@ export default async function handler(req, res) {
         );
 
         // ============================================================
-        // 2. BUSCAR TELEMETRIA
-        //
-        // energia_total = energia importada da REDE
-        // energia_gerada_total = energia EXPORTADA para a REDE
-        //
-        // Ambos são contadores acumulativos em Wh.
-        //
-        // ATENÇÃO:
-        // energia_gerada_total NÃO é geração FV.
-        // Geração FV será adicionada posteriormente pelo Elekeeper.
+        // BUSCAR TODAS AS LEITURAS
         // ============================================================
 
         let todasLeituras = [];
@@ -58,15 +46,13 @@ export default async function handler(req, res) {
 
             const fim = inicio + PAGE_SIZE - 1;
 
-            const {
-                data,
-                error
-            } = await supabase
+            const { data, error } = await supabase
                 .from('telemetria_eletrica')
                 .select(`
                     timestamp,
                     energia_total,
-                    energia_gerada_total
+                    energia_gerada_total,
+                    potencia_total
                 `)
                 .not('timestamp', 'is', null)
                 .order('timestamp', {
@@ -76,9 +62,7 @@ export default async function handler(req, res) {
 
             if (error) {
                 return res.status(500).json({
-                    erro:
-                        'Erro ao consultar telemetria_eletrica: ' +
-                        error.message
+                    erro: 'Erro ao consultar telemetria_eletrica: ' + error.message
                 });
             }
 
@@ -95,42 +79,26 @@ export default async function handler(req, res) {
             inicio += PAGE_SIZE;
         }
 
-        // ============================================================
-        // 3. SEM DADOS
-        // ============================================================
-
         if (todasLeituras.length === 0) {
 
             return res.status(200).json({
-
                 tarifa_kwh: TARIFA_KWH,
-
                 diarios: [],
-
                 mensais: [],
-
                 resumo: {
-                    geracao_fv_kwh: null,
-                    consumo_solar_kwh: null,
                     consumo_rede_kwh: 0,
                     energia_exportada_kwh: 0,
-                    consumo_total_kwh: null,
-                    autossuficiencia_pct: null,
-                    economia_rs: null,
-                    custo_rede_rs: 0
+                    saldo_kwh: 0,
+                    economia_rs: 0
                 },
-
-                fonte_energia: {
-                    consumo_rede: 'Tuya',
-                    energia_exportada: 'Tuya',
-                    geracao_fv: 'Elekeeper - pendente'
+                diagnostico: {
+                    leituras_consideradas: 0
                 }
-
             });
         }
 
         // ============================================================
-        // 4. DATA / TIMEZONE
+        // FORMATADORES
         // ============================================================
 
         const formatarDia = new Intl.DateTimeFormat('en-CA', {
@@ -147,7 +115,7 @@ export default async function handler(req, res) {
         });
 
         // ============================================================
-        // 5. AGRUPADORES
+        // AGRUPAMENTOS
         // ============================================================
 
         const diarios = {};
@@ -156,10 +124,16 @@ export default async function handler(req, res) {
         let leituraAnterior = null;
 
         let deltasInvalidos = 0;
-        let leiturasValidas = 0;
 
         // ============================================================
-        // 6. PROCESSAMENTO
+        // PROCESSAMENTO
+        //
+        // energia_total = consumo acumulado
+        // energia_gerada_total = energia exportada acumulada
+        //
+        // IMPORTANTE:
+        // energia_gerada_total NÃO é geração solar total.
+        // É a energia reversa/exportada registrada pelo medidor.
         // ============================================================
 
         for (const leitura of todasLeituras) {
@@ -177,86 +151,53 @@ export default async function handler(req, res) {
             const dia = formatarDia.format(dataObjeto);
             const mes = formatarMes.format(dataObjeto);
 
-            // --------------------------------------------------------
-            // Inicializa dia
-            // --------------------------------------------------------
-
             if (!diarios[dia]) {
 
                 diarios[dia] = {
-
                     data: dia,
-
                     consumo_rede_kwh: 0,
-
                     energia_exportada_kwh: 0
-
                 };
-
             }
-
-            // --------------------------------------------------------
-            // Inicializa mês
-            // --------------------------------------------------------
 
             if (!mensais[mes]) {
 
                 mensais[mes] = {
-
                     mes: mes,
-
                     consumo_rede_kwh: 0,
-
                     energia_exportada_kwh: 0
-
                 };
-
             }
 
-            // --------------------------------------------------------
-            // Primeira leitura
-            // --------------------------------------------------------
-
+            // Primeira leitura não possui delta
             if (!leituraAnterior) {
-
                 leituraAnterior = leitura;
-
                 continue;
             }
 
-            // --------------------------------------------------------
-            // CONTADORES
-            // --------------------------------------------------------
+            const consumoAtual = Number(leitura.energia_total);
+            const exportacaoAtual = Number(leitura.energia_gerada_total);
 
-            const consumoAtual =
-                Number(leitura.energia_total);
+            const consumoAnterior = Number(
+                leituraAnterior.energia_total
+            );
 
-            const consumoAnterior =
-                Number(leituraAnterior.energia_total);
-
-            const exportacaoAtual =
-                Number(leitura.energia_gerada_total);
-
-            const exportacaoAnterior =
-                Number(leituraAnterior.energia_gerada_total);
+            const exportacaoAnterior = Number(
+                leituraAnterior.energia_gerada_total
+            );
 
             if (
                 !Number.isFinite(consumoAtual) ||
-                !Number.isFinite(consumoAnterior) ||
                 !Number.isFinite(exportacaoAtual) ||
+                !Number.isFinite(consumoAnterior) ||
                 !Number.isFinite(exportacaoAnterior)
             ) {
 
                 deltasInvalidos++;
 
                 leituraAnterior = leitura;
-
                 continue;
             }
-
-            // --------------------------------------------------------
-            // DELTA EM Wh
-            // --------------------------------------------------------
 
             let deltaConsumoWh =
                 consumoAtual - consumoAnterior;
@@ -264,242 +205,212 @@ export default async function handler(req, res) {
             let deltaExportacaoWh =
                 exportacaoAtual - exportacaoAnterior;
 
-            // --------------------------------------------------------
-            // RESET DE CONTADOR
-            // --------------------------------------------------------
-
+            // Proteção contra reset
             if (deltaConsumoWh < 0) {
 
                 deltaConsumoWh = 0;
-
                 deltasInvalidos++;
-
             }
 
             if (deltaExportacaoWh < 0) {
 
                 deltaExportacaoWh = 0;
-
                 deltasInvalidos++;
-
             }
 
-            // --------------------------------------------------------
-            // CONVERSÃO Wh -> kWh
-            // --------------------------------------------------------
-
-            const consumoRedeKwh =
+            const consumoKwh =
                 deltaConsumoWh / 1000;
 
             const exportacaoKwh =
                 deltaExportacaoWh / 1000;
 
-            // --------------------------------------------------------
-            // DIA
-            // --------------------------------------------------------
+            diarios[dia].consumo_rede_kwh += consumoKwh;
+            diarios[dia].energia_exportada_kwh += exportacaoKwh;
 
-            diarios[dia].consumo_rede_kwh +=
-                consumoRedeKwh;
-
-            diarios[dia].energia_exportada_kwh +=
-                exportacaoKwh;
-
-            // --------------------------------------------------------
-            // MÊS
-            // --------------------------------------------------------
-
-            mensais[mes].consumo_rede_kwh +=
-                consumoRedeKwh;
-
-            mensais[mes].energia_exportada_kwh +=
-                exportacaoKwh;
-
-            leiturasValidas++;
+            mensais[mes].consumo_rede_kwh += consumoKwh;
+            mensais[mes].energia_exportada_kwh += exportacaoKwh;
 
             leituraAnterior = leitura;
         }
 
         // ============================================================
-        // 7. ARREDONDAMENTO
+        // INDICADORES
         // ============================================================
 
-        function arredondar(valor) {
+        function calcularIndicadores(consumoRede, exportacao) {
 
-            return Number(
-                Number(valor || 0).toFixed(2)
-            );
+            // Nesta etapa NÃO existe geração solar total.
+            //
+            // Portanto não calculamos:
+            // geração solar
+            // consumo solar
+            //
+            // O saldo apresentado é apenas:
+            // exportação - consumo da rede
+            //
+            // Quando Elekeeper entrar, substituiremos pelo balanço
+            // energético real.
 
+            const saldo =
+                exportacao - consumoRede;
+
+            const economia =
+                Math.max(0, exportacao * TARIFA_KWH);
+
+            return {
+
+                consumo_rede_kwh:
+                    Number(consumoRede.toFixed(2)),
+
+                energia_exportada_kwh:
+                    Number(exportacao.toFixed(2)),
+
+                saldo_kwh:
+                    Number(saldo.toFixed(2)),
+
+                economia_rs:
+                    Number(economia.toFixed(2))
+            };
         }
 
         // ============================================================
-        // 8. RESULTADO DIÁRIO
-        //
-        // Geração FV ainda NÃO disponível.
+        // RESULTADO DIÁRIO
         // ============================================================
 
-        const resultadoDiario =
-            Object.values(diarios)
-                .sort((a, b) =>
-                    a.data.localeCompare(b.data)
-                )
-                .map(dia => {
+        const resultadoDiario = Object.values(diarios)
+            .sort((a, b) =>
+                a.data.localeCompare(b.data)
+            )
+            .map(dia => {
 
-                    return {
+                const indicadores =
+                    calcularIndicadores(
+                        dia.consumo_rede_kwh,
+                        dia.energia_exportada_kwh
+                    );
 
-                        data: dia.data,
+                return {
+                    data: dia.data,
 
-                        // Tuya
-                        consumo_rede_kwh:
-                            arredondar(
-                                dia.consumo_rede_kwh
-                            ),
+                    consumo_rede_kwh:
+                        indicadores.consumo_rede_kwh,
 
-                        energia_exportada_kwh:
-                            arredondar(
-                                dia.energia_exportada_kwh
-                            ),
+                    energia_exportada_kwh:
+                        indicadores.energia_exportada_kwh,
 
-                        // Elekeeper futuramente
-                        geracao_fv_kwh: null,
+                    saldo_kwh:
+                        indicadores.saldo_kwh,
 
-                        consumo_solar_kwh: null,
+                    economia_rs:
+                        indicadores.economia_rs,
 
-                        consumo_total_kwh: null,
-
-                        autossuficiencia_pct: null,
-
-                        economia_rs: null,
-
-                        saldo_kwh: null
-
-                    };
-
-                });
+                    // Campos futuros
+                    geracao_solar_kwh: null,
+                    consumo_solar_kwh: null
+                };
+            });
 
         // ============================================================
-        // 9. RESULTADO MENSAL
+        // RESULTADO MENSAL
         // ============================================================
 
-        const resultadoMensal =
-            Object.values(mensais)
-                .sort((a, b) =>
-                    a.mes.localeCompare(b.mes)
-                )
-                .map(mes => {
+        const resultadoMensal = Object.values(mensais)
+            .sort((a, b) =>
+                a.mes.localeCompare(b.mes)
+            )
+            .map(mes => {
 
-                    return {
+                const indicadores =
+                    calcularIndicadores(
+                        mes.consumo_rede_kwh,
+                        mes.energia_exportada_kwh
+                    );
 
-                        mes: mes.mes,
+                return {
+                    mes: mes.mes,
 
-                        // IMPORTAÇÃO DA REDE
-                        consumo_rede_kwh:
-                            arredondar(
-                                mes.consumo_rede_kwh
-                            ),
+                    consumo_rede_kwh:
+                        indicadores.consumo_rede_kwh,
 
-                        // EXPORTAÇÃO PARA REDE
-                        energia_exportada_kwh:
-                            arredondar(
-                                mes.energia_exportada_kwh
-                            ),
+                    energia_exportada_kwh:
+                        indicadores.energia_exportada_kwh,
 
-                        // FUTURO ELEKEEPER
-                        geracao_fv_kwh: null,
+                    saldo_kwh:
+                        indicadores.saldo_kwh,
 
-                        consumo_solar_kwh: null,
+                    economia_rs:
+                        indicadores.economia_rs,
 
-                        consumo_total_kwh: null,
-
-                        autossuficiencia_pct: null,
-
-                        economia_rs: null,
-
-                        saldo_kwh: null
-
-                    };
-
-                });
+                    // Futuro Elekeeper
+                    geracao_solar_kwh: null,
+                    consumo_solar_kwh: null
+                };
+            });
 
         // ============================================================
-        // 10. RESUMO GERAL
+        // RESUMO
         // ============================================================
 
-        const consumoRedeTotal =
+        const consumoTotal =
             resultadoMensal.reduce(
                 (total, item) =>
-                    total +
-                    Number(item.consumo_rede_kwh || 0),
+                    total + item.consumo_rede_kwh,
                 0
             );
 
         const exportacaoTotal =
             resultadoMensal.reduce(
                 (total, item) =>
-                    total +
-                    Number(item.energia_exportada_kwh || 0),
+                    total + item.energia_exportada_kwh,
                 0
             );
 
-        const custoRede =
-            consumoRedeTotal * TARIFA_KWH;
+        const resumo =
+            calcularIndicadores(
+                consumoTotal,
+                exportacaoTotal
+            );
 
         // ============================================================
-        // 11. RETORNO
+        // RETORNO
         // ============================================================
 
         return res.status(200).json({
 
             tarifa_kwh: TARIFA_KWH,
 
-            diarios: resultadoDiario,
+            diarios:
+                resultadoDiario,
 
-            mensais: resultadoMensal,
+            mensais:
+                resultadoMensal,
 
             resumo: {
 
-                // ----------------------------------------------------
-                // TUYA
-                // ----------------------------------------------------
-
                 consumo_rede_kwh:
-                    arredondar(consumoRedeTotal),
+                    resumo.consumo_rede_kwh,
 
                 energia_exportada_kwh:
-                    arredondar(exportacaoTotal),
+                    resumo.energia_exportada_kwh,
 
-                custo_rede_rs:
-                    arredondar(custoRede),
+                saldo_kwh:
+                    resumo.saldo_kwh,
 
-                // ----------------------------------------------------
-                // ELEKEEPER - FUTURO
-                // ----------------------------------------------------
+                economia_rs:
+                    resumo.economia_rs,
 
-                geracao_fv_kwh: null,
+                geracao_solar_kwh:
+                    null,
 
-                consumo_solar_kwh: null,
-
-                consumo_total_kwh: null,
-
-                autossuficiencia_pct: null,
-
-                economia_rs: null,
-
-                saldo_kwh: null
-
+                consumo_solar_kwh:
+                    null
             },
 
-            fonte_energia: {
+            fonte_energia:
+                'telemetria_eletrica',
 
-                consumo_rede:
-                    'Tuya - energia_total',
-
-                energia_exportada:
-                    'Tuya - energia_gerada_total',
-
-                geracao_fv:
-                    'Elekeeper - será implementado'
-
-            },
+            status_geracao_solar:
+                'AGUARDANDO_INTEGRACAO_ELEKEEPER',
 
             contadores_tuya: {
 
@@ -514,16 +425,12 @@ export default async function handler(req, res) {
 
                 unidade_saida:
                     'kWh'
-
             },
 
             diagnostico: {
 
                 leituras_consideradas:
                     todasLeituras.length,
-
-                leituras_validas:
-                    leiturasValidas,
 
                 deltas_invalidos:
                     deltasInvalidos,
@@ -532,18 +439,14 @@ export default async function handler(req, res) {
                     todasLeituras[0]?.timestamp || null,
 
                 ultimo_timestamp:
-                    todasLeituras[
-                        todasLeituras.length - 1
-                    ]?.timestamp || null,
+                    todasLeituras[todasLeituras.length - 1]?.timestamp || null,
 
                 total_dias:
                     resultadoDiario.length,
 
                 total_meses:
                     resultadoMensal.length
-
             }
-
         });
 
     } catch (erro) {
@@ -558,9 +461,6 @@ export default async function handler(req, res) {
             erro:
                 'Erro interno na gestão energética: ' +
                 erro.message
-
         });
-
     }
-
 }
