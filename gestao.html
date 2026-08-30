@@ -1,93 +1,802 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestão Energética - Painel Executivo</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 25px; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
-        .label { color: #8b949e; font-size: 0.75rem; text-transform: uppercase; font-weight: bold; }
-        .value { font-size: 1.8rem; font-weight: bold; margin-top: 8px; }
-        .positivo { color: #3fb950; }
-        .negativo { color: #f85149; }
-        .neutro { color: #58a6ff; }
-        .section-title { font-size: 1rem; color: #8b949e; margin-top: 15px; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 5px; text-transform: uppercase; }
-        select { background: #161b22; color: #e6edf3; border: 1px solid #30363d; padding: 8px 12px; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
-    </style>
-</head>
-<body class="dark-theme" style="background-color: #0d1117; color: #e6edf3; font-family: sans-serif; margin: 0; padding: 0;">
-    <header style="display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #30363d; background: #161b22;">
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <h1 style="color: #58a6ff; font-size: 1.25rem; margin: 0;">📊 Gestão Energética Avançada</h1>
-        </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <label style="color: #8b949e; font-size: 0.85rem;">MÊS:</label>
-            <select id="seletorMes"></select>
-            <a href="index.html" class="btn-voltar" style="background: #21262d; color: #c9d1d9; padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px; text-decoration: none; font-size: 0.9rem;">⬅ Voltar</a>
-        </div>
-    </header>
+let dadosGlobais = null;
 
-    <main style="max-width: 1400px; margin: 20px auto; padding: 0 20px;">
-        
-        <!-- Bloco 1: Desempenho do Mês Selecionado -->
-        <h2 id="titulo-mes" class="section-title">RESUMO DO MÊS</h2>
-        <section class="card-grid">
-            <div class="card">
-                <div class="label">Geração Solar do Mês</div>
-                <div id="mes-geracao" class="value positivo">0.00 kWh</div>
-            </div>
-            <div class="card">
-                <div class="label">Consumo Total do Mês</div>
-                <div id="mes-consumo" class="value negativo">0.00 kWh</div>
-            </div>
-            <div class="card">
-                <div class="label">Saldo do Mês (Injetado - Consumido)</div>
-                <div id="mes-saldo" class="value neutro">0.00 kWh</div>
-            </div>
-            <div class="card">
-                <div class="label">Economia no Mês (R$)</div>
-                <div id="mes-economia" class="value positivo">R$ 0,00</div>
-            </div>
-        </section>
+let chartMensal = null;
+let chartDiario = null;
+let chartSaldo = null;
 
-        <!-- Bloco 2: Indicadores de Curto Prazo -->
-        <h2 class="section-title">INDICADORES RECENTES</h2>
-        <section class="card-grid" style="grid-template-columns: 1fr 1fr;">
-            <div class="card" style="border-left: 4px solid #58a6ff;">
-                <div class="label">Saldo da Última Leitura (Hoje)</div>
-                <div id="hoje-saldo" class="value">0.00 kWh</div>
-            </div>
-            <div class="card" style="border-left: 4px solid #a371f7;">
-                <div class="label">Saldo dos Últimos 7 Dias</div>
-                <div id="semana-saldo" class="value">0.00 kWh</div>
-            </div>
-        </section>
 
-        <!-- Bloco 3: Gráficos Diários -->
-        <h2 class="section-title">ACOMPANHAMENTO DIÁRIO</h2>
-        <section class="card-grid" style="grid-template-columns: 1fr 1fr;">
-            <div class="card">
-                <div class="label" style="margin-bottom: 15px;">Geração x Consumo</div>
-                <canvas id="graficoDiario" style="max-height: 280px;"></canvas>
-            </div>
-            <div class="card">
-                <div class="label" style="margin-bottom: 15px;">Balanço Energético Diário</div>
-                <canvas id="graficoSaldo" style="max-height: 280px;"></canvas>
-            </div>
-        </section>
+// ================================================================
+// FORMATADORES
+// ================================================================
 
-        <!-- Bloco 4: Gráfico Histórico Mensal -->
-        <h2 class="section-title">HISTÓRICO MENSAL CONSOLIDADO</h2>
-        <section class="card-grid" style="grid-template-columns: 1fr;">
-            <div class="card">
-                <div class="label" style="margin-bottom: 15px;">Consumo x Produção por Mês</div>
-                <canvas id="graficoMensal" style="max-height: 350px;"></canvas>
-            </div>
-        </section>
-    </main>
-    <script src="gestao.js"></script>
-</body>
-</html>
+function numero(valor) {
+
+    if (
+        valor === null ||
+        valor === undefined ||
+        !Number.isFinite(Number(valor))
+    ) {
+        return null;
+    }
+
+    return Number(valor);
+}
+
+
+function formatarKwh(valor) {
+
+    const n = numero(valor);
+
+    if (n === null) {
+        return '—';
+    }
+
+    return `${n.toFixed(2)} kWh`;
+}
+
+
+function formatarRs(valor) {
+
+    const n = numero(valor);
+
+    if (n === null) {
+        return '—';
+    }
+
+    return `R$ ${n.toFixed(2)}`;
+}
+
+
+// ================================================================
+// ALTERA TÍTULOS DOS CARDS EXISTENTES
+// ================================================================
+
+function corrigirTitulosCards() {
+
+    const textos = document.body.querySelectorAll('*');
+
+    textos.forEach(elemento => {
+
+        if (
+            elemento.children.length === 0 &&
+            elemento.textContent
+        ) {
+
+            const texto =
+                elemento.textContent.trim();
+
+            if (
+                texto === 'GERAÇÃO SOLAR DO MÊS' ||
+                texto === 'GERAÇÃO SOLAR'
+            ) {
+
+                elemento.textContent =
+                    'ENERGIA EXPORTADA PARA REDE';
+
+            }
+
+            if (
+                texto === 'CONSUMO TOTAL DO MÊS' ||
+                texto === 'CONSUMO TOTAL'
+            ) {
+
+                elemento.textContent =
+                    'CONSUMO DA REDE';
+
+            }
+
+            if (
+                texto === 'SALDO DO MÊS (INJETADO - CONSUMIDO)' ||
+                texto === 'SALDO DO MÊS'
+            ) {
+
+                elemento.textContent =
+                    'GERAÇÃO FV';
+
+            }
+
+            if (
+                texto === 'ECONOMIA NO MÊS (R$)' ||
+                texto === 'ECONOMIA NO MÊS'
+            ) {
+
+                elemento.textContent =
+                    'ECONOMIA SOLAR';
+
+            }
+
+        }
+
+    });
+
+}
+
+
+// ================================================================
+// CARREGAMENTO
+// ================================================================
+
+async function carregarGestaoEnergetica() {
+
+    try {
+
+        const res =
+            await fetch(
+                '/api/gestao?v=' +
+                new Date().getTime()
+            );
+
+        dadosGlobais =
+            await res.json();
+
+        if (dadosGlobais.erro) {
+
+            alert(
+                'Erro na API: ' +
+                dadosGlobais.erro
+            );
+
+            return;
+        }
+
+        if (
+            !dadosGlobais.mensais ||
+            dadosGlobais.mensais.length === 0
+        ) {
+
+            console.warn(
+                'Nenhum dado encontrado.'
+            );
+
+            return;
+        }
+
+        const selectMes =
+            document.getElementById(
+                'seletorMes'
+            );
+
+        if (!selectMes) {
+            return;
+        }
+
+        selectMes.innerHTML = '';
+
+        dadosGlobais.mensais.forEach(m => {
+
+            const option =
+                document.createElement('option');
+
+            option.value = m.mes;
+
+            const partes =
+                m.mes.split('-');
+
+            option.text =
+                `${partes[1]}/${partes[0]}`;
+
+            selectMes.appendChild(option);
+
+        });
+
+        selectMes.selectedIndex =
+            selectMes.options.length - 1;
+
+        selectMes.onchange = function () {
+
+            renderizarMesSelecionado(
+                this.value
+            );
+
+        };
+
+        renderizarMesSelecionado(
+            selectMes.value
+        );
+
+        renderizarGraficoMensal(
+            dadosGlobais.mensais
+        );
+
+        corrigirTitulosCards();
+
+    } catch (erro) {
+
+        console.error(
+            'Falha ao carregar gestão:',
+            erro
+        );
+
+    }
+
+}
+
+
+// ================================================================
+// MÊS
+// ================================================================
+
+function renderizarMesSelecionado(mesStr) {
+
+    const mesObj =
+        dadosGlobais.mensais.find(
+            m => m.mes === mesStr
+        );
+
+    if (!mesObj) {
+        return;
+    }
+
+    const partesMes =
+        mesStr.split('-')
+            .reverse()
+            .join('/');
+
+    const titulo =
+        document.getElementById(
+            'titulo-mes'
+        );
+
+    if (titulo) {
+
+        titulo.innerText =
+            `RESUMO DO MÊS (${partesMes})`;
+
+    }
+
+
+    // ============================================================
+    // CARDS
+    // ============================================================
+
+    // Exportação Tuya
+    const mesGeracao =
+        document.getElementById(
+            'mes-geracao'
+        );
+
+    if (mesGeracao) {
+
+        mesGeracao.innerText =
+            formatarKwh(
+                mesObj.energia_exportada_kwh
+            );
+
+    }
+
+
+    // Consumo da rede
+    const mesConsumo =
+        document.getElementById(
+            'mes-consumo'
+        );
+
+    if (mesConsumo) {
+
+        mesConsumo.innerText =
+            formatarKwh(
+                mesObj.consumo_rede_kwh
+            );
+
+    }
+
+
+    // Geração FV
+    const mesSaldo =
+        document.getElementById(
+            'mes-saldo'
+        );
+
+    if (mesSaldo) {
+
+        mesSaldo.innerText =
+            'Aguardando Elekeeper';
+
+        mesSaldo.style.color =
+            '#8b949e';
+
+    }
+
+
+    // Economia
+    const mesEconomia =
+        document.getElementById(
+            'mes-economia'
+        );
+
+    if (mesEconomia) {
+
+        mesEconomia.innerText =
+            'Aguardando geração FV';
+
+        mesEconomia.style.color =
+            '#8b949e';
+
+    }
+
+
+    // ============================================================
+    // INDICADORES
+    // ============================================================
+
+    const diarios =
+        dadosGlobais.diarios
+            .filter(
+                d =>
+                    d.data.startsWith(
+                        mesStr
+                    )
+            );
+
+    if (diarios.length > 0) {
+
+        const hoje =
+            diarios[diarios.length - 1];
+
+        const ultimos7 =
+            diarios.slice(-7);
+
+
+        // --------------------------------------------------------
+        // Exportação dos últimos 7 dias
+        // --------------------------------------------------------
+
+        const exportacao7 =
+            ultimos7.reduce(
+                (total, item) =>
+                    total +
+                    Number(
+                        item.energia_exportada_kwh || 0
+                    ),
+                0
+            );
+
+
+        const hojeSaldo =
+            document.getElementById(
+                'hoje-saldo'
+            );
+
+        if (hojeSaldo) {
+
+            hojeSaldo.innerText =
+                `Exportação: ${
+                    Number(
+                        hoje.energia_exportada_kwh || 0
+                    ).toFixed(2)
+                } kWh`;
+
+            hojeSaldo.style.color =
+                '#3fb950';
+
+        }
+
+
+        const semanaSaldo =
+            document.getElementById(
+                'semana-saldo'
+            );
+
+        if (semanaSaldo) {
+
+            semanaSaldo.innerText =
+                `Exportação: ${
+                    exportacao7.toFixed(2)
+                } kWh`;
+
+            semanaSaldo.style.color =
+                '#3fb950';
+
+        }
+
+    }
+
+
+    // ============================================================
+    // GRÁFICOS
+    // ============================================================
+
+    renderizarGraficosDiarios(
+        diarios
+    );
+
+}
+
+
+// ================================================================
+// GRÁFICO MENSAL
+// ================================================================
+
+function renderizarGraficoMensal(mensais) {
+
+    const canvas =
+        document.getElementById(
+            'graficoMensal'
+        );
+
+    if (!canvas) {
+        return;
+    }
+
+    const ctx =
+        canvas.getContext('2d');
+
+    const labels =
+        mensais.map(
+            m =>
+                m.mes
+                    .split('-')
+                    .reverse()
+                    .join('/')
+        );
+
+    if (chartMensal) {
+
+        chartMensal.destroy();
+
+    }
+
+    chartMensal =
+        new Chart(ctx, {
+
+            type: 'bar',
+
+            data: {
+
+                labels,
+
+                datasets: [
+
+                    {
+                        label:
+                            'Exportação para rede (kWh)',
+
+                        data:
+                            mensais.map(
+                                m =>
+                                    Number(
+                                        m.energia_exportada_kwh || 0
+                                    )
+                            ),
+
+                        backgroundColor:
+                            '#f59e0b'
+                    },
+
+                    {
+                        label:
+                            'Consumo da rede (kWh)',
+
+                        data:
+                            mensais.map(
+                                m =>
+                                    Number(
+                                        m.consumo_rede_kwh || 0
+                                    )
+                            ),
+
+                        backgroundColor:
+                            '#f85149'
+                    }
+
+                ]
+
+            },
+
+            options: {
+
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                scales: {
+
+                    y: {
+
+                        beginAtZero: true,
+
+                        grid: {
+                            color: '#30363d'
+                        },
+
+                        ticks: {
+                            color: '#8b949e'
+                        }
+
+                    },
+
+                    x: {
+
+                        grid: {
+                            display: false
+                        },
+
+                        ticks: {
+                            color: '#8b949e'
+                        }
+
+                    }
+
+                },
+
+                plugins: {
+
+                    legend: {
+
+                        labels: {
+                            color: '#e6edf3'
+                        }
+
+                    }
+
+                }
+
+            }
+
+        });
+
+}
+
+
+// ================================================================
+// GRÁFICOS DIÁRIOS
+// ================================================================
+
+function renderizarGraficosDiarios(dados) {
+
+    const labels =
+        dados.map(
+            d => {
+
+                const partes =
+                    d.data.split('-');
+
+                return `${partes[2]}/${partes[1]}`;
+
+            }
+        );
+
+
+    // ============================================================
+    // GRÁFICO 1
+    // CONSUMO DA REDE X EXPORTAÇÃO
+    // ============================================================
+
+    const canvasDiario =
+        document.getElementById(
+            'graficoDiario'
+        );
+
+    if (canvasDiario) {
+
+        if (chartDiario) {
+
+            chartDiario.destroy();
+
+        }
+
+        chartDiario =
+            new Chart(
+                canvasDiario.getContext('2d'),
+                {
+
+                    type: 'bar',
+
+                    data: {
+
+                        labels,
+
+                        datasets: [
+
+                            {
+                                label:
+                                    'Consumo da rede (kWh)',
+
+                                data:
+                                    dados.map(
+                                        d =>
+                                            Number(
+                                                d.consumo_rede_kwh || 0
+                                            )
+                                    ),
+
+                                backgroundColor:
+                                    '#f85149'
+                            },
+
+                            {
+                                label:
+                                    'Exportação para rede (kWh)',
+
+                                data:
+                                    dados.map(
+                                        d =>
+                                            Number(
+                                                d.energia_exportada_kwh || 0
+                                            )
+                                    ),
+
+                                backgroundColor:
+                                    '#f59e0b'
+                            }
+
+                        ]
+
+                    },
+
+                    options: {
+
+                        responsive: true,
+
+                        maintainAspectRatio: false,
+
+                        scales: {
+
+                            y: {
+
+                                beginAtZero: true,
+
+                                grid: {
+                                    color: '#30363d'
+                                },
+
+                                ticks: {
+                                    color: '#8b949e'
+                                }
+
+                            },
+
+                            x: {
+
+                                grid: {
+                                    display: false
+                                },
+
+                                ticks: {
+                                    color: '#8b949e'
+                                }
+
+                            }
+
+                        },
+
+                        plugins: {
+
+                            legend: {
+
+                                labels: {
+                                    color: '#e6edf3'
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+                }
+            );
+
+    }
+
+
+    // ============================================================
+    // GRÁFICO 2
+    // NÃO MOSTRA MAIS "BALANÇO" FALSO
+    // Mostra exportação diária.
+    // Quando Elekeeper entrar, este gráfico será substituído
+    // pelo balanço real de energia.
+    // ============================================================
+
+    const canvasSaldo =
+        document.getElementById(
+            'graficoSaldo'
+        );
+
+    if (canvasSaldo) {
+
+        if (chartSaldo) {
+
+            chartSaldo.destroy();
+
+        }
+
+        chartSaldo =
+            new Chart(
+                canvasSaldo.getContext('2d'),
+                {
+
+                    type: 'bar',
+
+                    data: {
+
+                        labels,
+
+                        datasets: [
+
+                            {
+
+                                label:
+                                    'Exportação para rede (kWh)',
+
+                                data:
+                                    dados.map(
+                                        d =>
+                                            Number(
+                                                d.energia_exportada_kwh || 0
+                                            )
+                                    ),
+
+                                backgroundColor:
+                                    '#f59e0b'
+
+                            }
+
+                        ]
+
+                    },
+
+                    options: {
+
+                        responsive: true,
+
+                        maintainAspectRatio: false,
+
+                        scales: {
+
+                            y: {
+
+                                beginAtZero: true,
+
+                                grid: {
+                                    color: '#30363d'
+                                },
+
+                                ticks: {
+                                    color: '#8b949e'
+                                }
+
+                            },
+
+                            x: {
+
+                                grid: {
+                                    display: false
+                                },
+
+                                ticks: {
+                                    color: '#8b949e'
+                                }
+
+                            }
+
+                        },
+
+                        plugins: {
+
+                            legend: {
+
+                                labels: {
+                                    color: '#e6edf3'
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+                }
+            );
+
+    }
+
+}
+
+
+// ================================================================
+// INICIALIZAÇÃO
+// ================================================================
+
+window.onload =
+    carregarGestaoEnergetica;
