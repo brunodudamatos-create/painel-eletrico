@@ -10,14 +10,13 @@ export default async function handler(req, res) {
         'Cache-Control',
         'no-store, no-cache, must-revalidate, proxy-revalidate'
     );
-
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
 
     try {
 
         // ============================================================
-        // 1. CONEXÃO SUPABASE
+        // 1. SUPABASE
         // ============================================================
 
         const supabaseUrl =
@@ -29,11 +28,9 @@ export default async function handler(req, res) {
             process.env.SUPABASE_KEY;
 
         if (!supabaseUrl || !supabaseKey) {
-
             return res.status(500).json({
                 erro: 'Variáveis de ambiente do Supabase não configuradas.'
             });
-
         }
 
         const supabase = createClient(
@@ -41,12 +38,17 @@ export default async function handler(req, res) {
             supabaseKey
         );
 
-
         // ============================================================
-        // 2. BUSCAR TODAS AS LEITURAS
+        // 2. BUSCAR TELEMETRIA
         //
-        // A data da medição é timestamp.
-        // Não utilizar created_at para os cálculos.
+        // energia_total = energia importada da REDE
+        // energia_gerada_total = energia EXPORTADA para a REDE
+        //
+        // Ambos são contadores acumulativos em Wh.
+        //
+        // ATENÇÃO:
+        // energia_gerada_total NÃO é geração FV.
+        // Geração FV será adicionada posteriormente pelo Elekeeper.
         // ============================================================
 
         let todasLeituras = [];
@@ -54,8 +56,7 @@ export default async function handler(req, res) {
 
         while (true) {
 
-            const fim =
-                inicio + PAGE_SIZE - 1;
+            const fim = inicio + PAGE_SIZE - 1;
 
             const {
                 data,
@@ -74,21 +75,18 @@ export default async function handler(req, res) {
                 .range(inicio, fim);
 
             if (error) {
-
                 return res.status(500).json({
                     erro:
                         'Erro ao consultar telemetria_eletrica: ' +
                         error.message
                 });
-
             }
 
             if (!data || data.length === 0) {
                 break;
             }
 
-            todasLeituras =
-                todasLeituras.concat(data);
+            todasLeituras = todasLeituras.concat(data);
 
             if (data.length < PAGE_SIZE) {
                 break;
@@ -96,7 +94,6 @@ export default async function handler(req, res) {
 
             inicio += PAGE_SIZE;
         }
-
 
         // ============================================================
         // 3. SEM DADOS
@@ -113,129 +110,76 @@ export default async function handler(req, res) {
                 mensais: [],
 
                 resumo: {
-                    consumo_kwh: 0,
-                    geracao_kwh: 0,
-                    saldo_kwh: 0,
-                    economia_rs: 0,
-                    custo_rede_rs: 0,
-                    valor_geracao_rs: 0
+                    geracao_fv_kwh: null,
+                    consumo_solar_kwh: null,
+                    consumo_rede_kwh: 0,
+                    energia_exportada_kwh: 0,
+                    consumo_total_kwh: null,
+                    autossuficiencia_pct: null,
+                    economia_rs: null,
+                    custo_rede_rs: 0
                 },
 
-                fonte_energia:
-                    'telemetria_eletrica',
-
-                contadores_tuya: {
-
-                    consumo:
-                        'energia_total / forward_energy_total',
-
-                    geracao:
-                        'energia_gerada_total / reverse_energy_total',
-
-                    unidade_origem:
-                        'Wh',
-
-                    unidade_saida:
-                        'kWh'
-                },
-
-                diagnostico: {
-                    leituras_consideradas: 0
+                fonte_energia: {
+                    consumo_rede: 'Tuya',
+                    energia_exportada: 'Tuya',
+                    geracao_fv: 'Elekeeper - pendente'
                 }
 
             });
-
         }
 
+        // ============================================================
+        // 4. DATA / TIMEZONE
+        // ============================================================
+
+        const formatarDia = new Intl.DateTimeFormat('en-CA', {
+            timeZone: TIMEZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+
+        const formatarMes = new Intl.DateTimeFormat('en-CA', {
+            timeZone: TIMEZONE,
+            year: 'numeric',
+            month: '2-digit'
+        });
 
         // ============================================================
-        // 4. FORMATAÇÃO DE DATA
-        // ============================================================
-
-        const formatarDia =
-            new Intl.DateTimeFormat(
-                'en-CA',
-                {
-                    timeZone: TIMEZONE,
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit'
-                }
-            );
-
-        const formatarMes =
-            new Intl.DateTimeFormat(
-                'en-CA',
-                {
-                    timeZone: TIMEZONE,
-                    year: 'numeric',
-                    month: '2-digit'
-                }
-            );
-
-
-        // ============================================================
-        // 5. ESTRUTURAS
+        // 5. AGRUPADORES
         // ============================================================
 
         const diarios = {};
         const mensais = {};
 
-
-        // ============================================================
-        // 6. CONTADORES
-        // ============================================================
-
         let leituraAnterior = null;
 
-        let leiturasComConsumo = 0;
-        let leiturasComGeracao = 0;
-
-        let leiturasSemGeracao = 0;
-
         let deltasInvalidos = 0;
-
-        let deltasGeracaoSemBase = 0;
-
+        let leiturasValidas = 0;
 
         // ============================================================
-        // 7. PROCESSAMENTO
+        // 6. PROCESSAMENTO
         // ============================================================
 
         for (const leitura of todasLeituras) {
 
-            const timestamp =
-                leitura.timestamp;
-
-            if (!timestamp) {
+            if (!leitura.timestamp) {
                 continue;
             }
 
-            const dataObjeto =
-                new Date(timestamp);
+            const dataObjeto = new Date(leitura.timestamp);
 
-            if (
-                Number.isNaN(
-                    dataObjeto.getTime()
-                )
-            ) {
+            if (Number.isNaN(dataObjeto.getTime())) {
                 continue;
             }
 
-            const dia =
-                formatarDia.format(
-                    dataObjeto
-                );
+            const dia = formatarDia.format(dataObjeto);
+            const mes = formatarMes.format(dataObjeto);
 
-            const mes =
-                formatarMes.format(
-                    dataObjeto
-                );
-
-
-            // ========================================================
-            // INICIALIZA DIA
-            // ========================================================
+            // --------------------------------------------------------
+            // Inicializa dia
+            // --------------------------------------------------------
 
             if (!diarios[dia]) {
 
@@ -243,18 +187,17 @@ export default async function handler(req, res) {
 
                     data: dia,
 
-                    consumo_kwh: 0,
+                    consumo_rede_kwh: 0,
 
-                    geracao_kwh: 0
+                    energia_exportada_kwh: 0
 
                 };
 
             }
 
-
-            // ========================================================
-            // INICIALIZA MÊS
-            // ========================================================
+            // --------------------------------------------------------
+            // Inicializa mês
+            // --------------------------------------------------------
 
             if (!mensais[mes]) {
 
@@ -262,476 +205,309 @@ export default async function handler(req, res) {
 
                     mes: mes,
 
-                    consumo_kwh: 0,
+                    consumo_rede_kwh: 0,
 
-                    geracao_kwh: 0
+                    energia_exportada_kwh: 0
 
                 };
 
             }
 
-
-            // ========================================================
-            // PRIMEIRA LEITURA
-            // ========================================================
+            // --------------------------------------------------------
+            // Primeira leitura
+            // --------------------------------------------------------
 
             if (!leituraAnterior) {
 
                 leituraAnterior = leitura;
 
                 continue;
-
             }
 
-
-            // ========================================================
-            // CONSUMO
-            //
-            // IMPORTANTE:
-            // Não usar Number(null).
-            //
-            // Null NÃO é zero.
-            // ========================================================
+            // --------------------------------------------------------
+            // CONTADORES
+            // --------------------------------------------------------
 
             const consumoAtual =
-                leitura.energia_total !== null &&
-                leitura.energia_total !== undefined &&
-                leitura.energia_total !== ''
-                    ? Number(
-                        leitura.energia_total
-                    )
-                    : null;
+                Number(leitura.energia_total);
 
             const consumoAnterior =
-                leituraAnterior.energia_total !== null &&
-                leituraAnterior.energia_total !== undefined &&
-                leituraAnterior.energia_total !== ''
-                    ? Number(
-                        leituraAnterior.energia_total
-                    )
-                    : null;
+                Number(leituraAnterior.energia_total);
 
+            const exportacaoAtual =
+                Number(leitura.energia_gerada_total);
 
-            // ========================================================
-            // GERAÇÃO
-            //
-            // Só calcula geração quando EXISTEM dois valores válidos.
-            //
-            // Isso é fundamental porque antes de 08/08 a geração
-            // estava NULL.
-            // ========================================================
-
-            const geracaoAtual =
-                leitura.energia_gerada_total !== null &&
-                leitura.energia_gerada_total !== undefined &&
-                leitura.energia_gerada_total !== ''
-                    ? Number(
-                        leitura.energia_gerada_total
-                    )
-                    : null;
-
-            const geracaoAnterior =
-                leituraAnterior.energia_gerada_total !== null &&
-                leituraAnterior.energia_gerada_total !== undefined &&
-                leituraAnterior.energia_gerada_total !== ''
-                    ? Number(
-                        leituraAnterior.energia_gerada_total
-                    )
-                    : null;
-
-
-            // ========================================================
-            // VALIDAR CONSUMO
-            // ========================================================
-
-            let consumoKwh = 0;
+            const exportacaoAnterior =
+                Number(leituraAnterior.energia_gerada_total);
 
             if (
-                Number.isFinite(consumoAtual) &&
-                Number.isFinite(consumoAnterior)
+                !Number.isFinite(consumoAtual) ||
+                !Number.isFinite(consumoAnterior) ||
+                !Number.isFinite(exportacaoAtual) ||
+                !Number.isFinite(exportacaoAnterior)
             ) {
 
-                let deltaConsumoWh =
-                    consumoAtual -
-                    consumoAnterior;
+                deltasInvalidos++;
 
-                // ----------------------------------------------------
-                // Proteção contra reset
-                // ----------------------------------------------------
+                leituraAnterior = leitura;
 
-                if (deltaConsumoWh < 0) {
+                continue;
+            }
 
-                    deltaConsumoWh = 0;
+            // --------------------------------------------------------
+            // DELTA EM Wh
+            // --------------------------------------------------------
 
-                    deltasInvalidos++;
+            let deltaConsumoWh =
+                consumoAtual - consumoAnterior;
 
-                }
+            let deltaExportacaoWh =
+                exportacaoAtual - exportacaoAnterior;
 
-                // ----------------------------------------------------
-                // Wh -> kWh
-                // ----------------------------------------------------
+            // --------------------------------------------------------
+            // RESET DE CONTADOR
+            // --------------------------------------------------------
 
-                consumoKwh =
-                    deltaConsumoWh / 1000;
+            if (deltaConsumoWh < 0) {
 
-                if (consumoKwh > 0) {
-                    leiturasComConsumo++;
-                }
-
-            } else {
+                deltaConsumoWh = 0;
 
                 deltasInvalidos++;
 
             }
 
+            if (deltaExportacaoWh < 0) {
 
-            // ========================================================
-            // VALIDAR GERAÇÃO
-            // ========================================================
+                deltaExportacaoWh = 0;
 
-            let geracaoKwh = 0;
-
-            if (
-                Number.isFinite(geracaoAtual) &&
-                Number.isFinite(geracaoAnterior)
-            ) {
-
-                let deltaGeracaoWh =
-                    geracaoAtual -
-                    geracaoAnterior;
-
-                // ----------------------------------------------------
-                // Proteção contra reset
-                // ----------------------------------------------------
-
-                if (deltaGeracaoWh < 0) {
-
-                    deltaGeracaoWh = 0;
-
-                    deltasInvalidos++;
-
-                }
-
-                // ----------------------------------------------------
-                // Wh -> kWh
-                // ----------------------------------------------------
-
-                geracaoKwh =
-                    deltaGeracaoWh / 1000;
-
-                if (geracaoKwh > 0) {
-
-                    leiturasComGeracao++;
-
-                } else {
-
-                    leiturasSemGeracao++;
-
-                }
-
-            } else {
-
-                // Não considerar NULL como zero.
-                // Não inventar geração antes de existir uma base válida.
-
-                deltasGeracaoSemBase++;
-
-                leiturasSemGeracao++;
+                deltasInvalidos++;
 
             }
 
+            // --------------------------------------------------------
+            // CONVERSÃO Wh -> kWh
+            // --------------------------------------------------------
 
-            // ========================================================
-            // ACUMULAR NO DIA
-            // ========================================================
+            const consumoRedeKwh =
+                deltaConsumoWh / 1000;
 
-            diarios[dia].consumo_kwh +=
-                consumoKwh;
+            const exportacaoKwh =
+                deltaExportacaoWh / 1000;
 
-            diarios[dia].geracao_kwh +=
-                geracaoKwh;
+            // --------------------------------------------------------
+            // DIA
+            // --------------------------------------------------------
 
+            diarios[dia].consumo_rede_kwh +=
+                consumoRedeKwh;
 
-            // ========================================================
-            // ACUMULAR NO MÊS
-            // ========================================================
+            diarios[dia].energia_exportada_kwh +=
+                exportacaoKwh;
 
-            mensais[mes].consumo_kwh +=
-                consumoKwh;
+            // --------------------------------------------------------
+            // MÊS
+            // --------------------------------------------------------
 
-            mensais[mes].geracao_kwh +=
-                geracaoKwh;
+            mensais[mes].consumo_rede_kwh +=
+                consumoRedeKwh;
 
+            mensais[mes].energia_exportada_kwh +=
+                exportacaoKwh;
 
-            // ========================================================
-            // PRÓXIMA LEITURA
-            // ========================================================
+            leiturasValidas++;
 
-            leituraAnterior =
-                leitura;
+            leituraAnterior = leitura;
+        }
+
+        // ============================================================
+        // 7. ARREDONDAMENTO
+        // ============================================================
+
+        function arredondar(valor) {
+
+            return Number(
+                Number(valor || 0).toFixed(2)
+            );
 
         }
 
-
         // ============================================================
-        // 8. CÁLCULO FINANCEIRO
-        // ============================================================
-
-        function calcularIndicadores(
-            consumo,
-            geracao
-        ) {
-
-            const saldo =
-                geracao -
-                consumo;
-
-
-            const valorGeracao =
-                geracao *
-                TARIFA_KWH;
-
-
-            const custoRede =
-                consumo *
-                TARIFA_KWH;
-
-
-            const economia =
-                saldo *
-                TARIFA_KWH;
-
-
-            let percentualGeracao =
-                0;
-
-            if (consumo > 0) {
-
-                percentualGeracao =
-                    (
-                        geracao /
-                        consumo
-                    ) * 100;
-
-            }
-
-
-            let autossuficiencia =
-                0;
-
-            if (consumo > 0) {
-
-                autossuficiencia =
-                    Math.min(
-                        100,
-                        (
-                            geracao /
-                            consumo
-                        ) * 100
-                    );
-
-            }
-
-
-            return {
-
-                consumo_kwh:
-                    Number(
-                        consumo.toFixed(2)
-                    ),
-
-                geracao_kwh:
-                    Number(
-                        geracao.toFixed(2)
-                    ),
-
-                saldo_kwh:
-                    Number(
-                        saldo.toFixed(2)
-                    ),
-
-                economia_rs:
-                    Number(
-                        economia.toFixed(2)
-                    ),
-
-                custo_rede_rs:
-                    Number(
-                        custoRede.toFixed(2)
-                    ),
-
-                valor_geracao_rs:
-                    Number(
-                        valorGeracao.toFixed(2)
-                    ),
-
-                percentual_geracao_sobre_consumo:
-                    Number(
-                        percentualGeracao.toFixed(2)
-                    ),
-
-                autossuficiencia:
-                    Number(
-                        autossuficiencia.toFixed(2)
-                    )
-
-            };
-
-        }
-
-
-        // ============================================================
-        // 9. RESULTADO DIÁRIO
+        // 8. RESULTADO DIÁRIO
+        //
+        // Geração FV ainda NÃO disponível.
         // ============================================================
 
         const resultadoDiario =
             Object.values(diarios)
-                .sort(
-                    (a, b) =>
-                        a.data.localeCompare(
-                            b.data
-                        )
+                .sort((a, b) =>
+                    a.data.localeCompare(b.data)
                 )
                 .map(dia => {
 
                     return {
 
-                        data:
-                            dia.data,
+                        data: dia.data,
 
-                        ...calcularIndicadores(
-                            dia.consumo_kwh,
-                            dia.geracao_kwh
-                        )
+                        // Tuya
+                        consumo_rede_kwh:
+                            arredondar(
+                                dia.consumo_rede_kwh
+                            ),
+
+                        energia_exportada_kwh:
+                            arredondar(
+                                dia.energia_exportada_kwh
+                            ),
+
+                        // Elekeeper futuramente
+                        geracao_fv_kwh: null,
+
+                        consumo_solar_kwh: null,
+
+                        consumo_total_kwh: null,
+
+                        autossuficiencia_pct: null,
+
+                        economia_rs: null,
+
+                        saldo_kwh: null
 
                     };
 
                 });
 
-
         // ============================================================
-        // 10. RESULTADO MENSAL
+        // 9. RESULTADO MENSAL
         // ============================================================
 
         const resultadoMensal =
             Object.values(mensais)
-                .sort(
-                    (a, b) =>
-                        a.mes.localeCompare(
-                            b.mes
-                        )
+                .sort((a, b) =>
+                    a.mes.localeCompare(b.mes)
                 )
                 .map(mes => {
 
                     return {
 
-                        mes:
-                            mes.mes,
+                        mes: mes.mes,
 
-                        ...calcularIndicadores(
-                            mes.consumo_kwh,
-                            mes.geracao_kwh
-                        )
+                        // IMPORTAÇÃO DA REDE
+                        consumo_rede_kwh:
+                            arredondar(
+                                mes.consumo_rede_kwh
+                            ),
+
+                        // EXPORTAÇÃO PARA REDE
+                        energia_exportada_kwh:
+                            arredondar(
+                                mes.energia_exportada_kwh
+                            ),
+
+                        // FUTURO ELEKEEPER
+                        geracao_fv_kwh: null,
+
+                        consumo_solar_kwh: null,
+
+                        consumo_total_kwh: null,
+
+                        autossuficiencia_pct: null,
+
+                        economia_rs: null,
+
+                        saldo_kwh: null
 
                     };
 
                 });
 
-
         // ============================================================
-        // 11. RESUMO
+        // 10. RESUMO GERAL
         // ============================================================
 
-        const consumoTotal =
+        const consumoRedeTotal =
             resultadoMensal.reduce(
                 (total, item) =>
                     total +
-                    item.consumo_kwh,
+                    Number(item.consumo_rede_kwh || 0),
                 0
             );
 
-
-        const geracaoTotal =
+        const exportacaoTotal =
             resultadoMensal.reduce(
                 (total, item) =>
                     total +
-                    item.geracao_kwh,
+                    Number(item.energia_exportada_kwh || 0),
                 0
             );
 
-
-        const resumo =
-            calcularIndicadores(
-                consumoTotal,
-                geracaoTotal
-            );
-
+        const custoRede =
+            consumoRedeTotal * TARIFA_KWH;
 
         // ============================================================
-        // 12. DIAGNÓSTICO DOS CONTADORES
-        // ============================================================
-
-        const primeiraLeitura =
-            todasLeituras[0];
-
-        const ultimaLeitura =
-            todasLeituras[
-                todasLeituras.length - 1
-            ];
-
-
-        // ============================================================
-        // 13. RETORNO
+        // 11. RETORNO
         // ============================================================
 
         return res.status(200).json({
 
-            tarifa_kwh:
-                TARIFA_KWH,
+            tarifa_kwh: TARIFA_KWH,
 
+            diarios: resultadoDiario,
 
-            diarios:
-                resultadoDiario,
-
-
-            mensais:
-                resultadoMensal,
-
+            mensais: resultadoMensal,
 
             resumo: {
 
-                consumo_kwh:
-                    resumo.consumo_kwh,
+                // ----------------------------------------------------
+                // TUYA
+                // ----------------------------------------------------
 
-                geracao_kwh:
-                    resumo.geracao_kwh,
+                consumo_rede_kwh:
+                    arredondar(consumoRedeTotal),
 
-                saldo_kwh:
-                    resumo.saldo_kwh,
-
-                economia_rs:
-                    resumo.economia_rs,
+                energia_exportada_kwh:
+                    arredondar(exportacaoTotal),
 
                 custo_rede_rs:
-                    resumo.custo_rede_rs,
+                    arredondar(custoRede),
 
-                valor_geracao_rs:
-                    resumo.valor_geracao_rs
+                // ----------------------------------------------------
+                // ELEKEEPER - FUTURO
+                // ----------------------------------------------------
+
+                geracao_fv_kwh: null,
+
+                consumo_solar_kwh: null,
+
+                consumo_total_kwh: null,
+
+                autossuficiencia_pct: null,
+
+                economia_rs: null,
+
+                saldo_kwh: null
 
             },
 
+            fonte_energia: {
 
-            fonte_energia:
-                'telemetria_eletrica',
+                consumo_rede:
+                    'Tuya - energia_total',
 
+                energia_exportada:
+                    'Tuya - energia_gerada_total',
+
+                geracao_fv:
+                    'Elekeeper - será implementado'
+
+            },
 
             contadores_tuya: {
 
                 consumo:
-                    'energia_total / forward_energy_total',
+                    'energia_total',
 
-                geracao:
-                    'energia_gerada_total / reverse_energy_total',
+                exportacao:
+                    'energia_gerada_total',
 
                 unidade_origem:
                     'Wh',
@@ -741,50 +517,24 @@ export default async function handler(req, res) {
 
             },
 
-
             diagnostico: {
 
                 leituras_consideradas:
                     todasLeituras.length,
 
-                leituras_com_consumo:
-                    leiturasComConsumo,
-
-                leituras_com_geracao:
-                    leiturasComGeracao,
-
-                leituras_sem_geracao:
-                    leiturasSemGeracao,
-
-                deltas_geracao_sem_base:
-                    deltasGeracaoSemBase,
+                leituras_validas:
+                    leiturasValidas,
 
                 deltas_invalidos:
                     deltasInvalidos,
 
-                contador_consumo_inicial:
-                    primeiraLeitura?.energia_total ??
-                    null,
-
-                contador_consumo_final:
-                    ultimaLeitura?.energia_total ??
-                    null,
-
-                contador_geracao_inicial:
-                    primeiraLeitura?.energia_gerada_total ??
-                    null,
-
-                contador_geracao_final:
-                    ultimaLeitura?.energia_gerada_total ??
-                    null,
-
                 primeiro_timestamp:
-                    primeiraLeitura?.timestamp ??
-                    null,
+                    todasLeituras[0]?.timestamp || null,
 
                 ultimo_timestamp:
-                    ultimaLeitura?.timestamp ??
-                    null,
+                    todasLeituras[
+                        todasLeituras.length - 1
+                    ]?.timestamp || null,
 
                 total_dias:
                     resultadoDiario.length,
