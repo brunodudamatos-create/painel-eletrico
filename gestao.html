@@ -8,6 +8,128 @@ let chartSaldo = null;
 // ================================================================
 // FORMATADORES
 // ================================================================
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestão Energética - Painel Executivo</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0d1117;color:#e6edf3;font-family:Segoe UI,Arial,sans-serif}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
+h1{margin:0;color:#58a6ff;font-size:1.25rem}
+.controls{display:flex;align-items:center;gap:10px}
+select,.btn{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:7px;padding:9px 13px;text-decoration:none}
+main{max-width:1400px;margin:auto;padding:22px 28px}
+.section-title{font-size:1rem;color:#8b949e;margin:8px 0 15px;border-bottom:1px solid #30363d;padding-bottom:8px;text-transform:uppercase}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:24px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:15px;margin-bottom:24px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;min-width:0}
+.label{color:#8b949e;font-size:.72rem;text-transform:uppercase;font-weight:700}
+.value{font-size:1.65rem;font-weight:700;margin-top:9px}
+.green{color:#3fb950}.red{color:#f85149}.blue{color:#58a6ff}.muted{color:#8b949e;font-size:1rem}
+.status{font-size:.72rem;color:#8b949e;margin-top:4px}
+.chart-card{height:370px}.chart-wrap{height:305px;position:relative}
+.notice{background:#1c2128;border:1px solid #30363d;border-left:4px solid #d29922;border-radius:9px;padding:13px 16px;margin-bottom:24px;color:#c9d1d9;font-size:.82rem}
+@media(max-width:1000px){.grid4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){header{padding:15px}.grid4,.grid2{grid-template-columns:1fr}main{padding:15px}.chart-card{height:330px}.chart-wrap{height:270px}}
+</style>
+</head>
+<body>
+<header>
+    <h1>📊 Gestão Energética</h1>
+    <div class="controls">
+        <span style="color:#8b949e;font-size:.8rem">MÊS:</span>
+        <select id="seletorMes"></select>
+        <a class="btn" href="index.html">⬅ Voltar</a>
+    </div>
+</header>
+
+<main>
+    <div id="status-api" class="status" style="margin-bottom:14px">Carregando...</div>
+    <h2 id="titulo-mes" class="section-title">GESTÃO ENERGÉTICA</h2>
+
+    <div class="notice">
+        <b>Base atual:</b> medidor elétrico Tuya. O sistema já mostra corretamente o que está disponível no medidor:
+        consumo da rede e energia solar exportada. A geração solar total do inversor e o consumo solar serão integrados depois via Elekeeper.
+    </div>
+
+    <div class="grid4">
+        <div class="card">
+            <div class="label">Consumo da rede</div>
+            <div id="mes-consumo-rede" class="value red">0,00 kWh</div>
+        </div>
+        <div class="card">
+            <div class="label">Solar exportada para a rede</div>
+            <div id="mes-exportacao" class="value green">0,00 kWh</div>
+        </div>
+        <div class="card">
+            <div class="label">Geração solar total</div>
+            <div id="mes-geracao-total" class="value blue">AGUARDANDO</div>
+            <div class="status">Inversor / Elekeeper</div>
+        </div>
+        <div class="card">
+            <div class="label">Consumo solar</div>
+            <div id="mes-consumo-solar" class="value blue">AGUARDANDO</div>
+            <div class="status">Geração total − exportação</div>
+        </div>
+    </div>
+
+    <h2 class="section-title">INDICADORES DA REDE</h2>
+    <div class="grid4">
+        <div class="card">
+            <div class="label">Custo estimado da energia da rede</div>
+            <div id="mes-custo-rede" class="value red">R$ 0,00</div>
+            <div class="status">Tarifa: R$ 0,899/kWh</div>
+        </div>
+        <div class="card">
+            <div class="label">Balanço da rede</div>
+            <div id="mes-balanco-rede" class="value blue">0,00 kWh</div>
+            <div class="status">Exportação − consumo da rede</div>
+        </div>
+        <div class="card">
+            <div class="label">Economia solar</div>
+            <div id="mes-economia" class="value blue">AGUARDANDO</div>
+            <div class="status">Depende da geração total</div>
+        </div>
+        <div class="card">
+            <div class="label">Saldo da última leitura do dia</div>
+            <div id="hoje-saldo" class="value blue">0,00 kWh</div>
+        </div>
+    </div>
+
+    <h2 class="section-title">ÚLTIMOS 7 DIAS</h2>
+    <div class="grid2">
+        <div class="card">
+            <div class="label">Balanço da rede — últimos 7 dias</div>
+            <div id="semana-saldo" class="value blue">0,00 kWh</div>
+        </div>
+    </div>
+
+    <h2 class="section-title">ACOMPANHAMENTO DIÁRIO</h2>
+    <div class="grid2">
+        <div class="card chart-card">
+            <div class="label" style="margin-bottom:12px">Consumo da rede x Solar exportada</div>
+            <div class="chart-wrap"><canvas id="graficoDiario"></canvas></div>
+        </div>
+        <div class="card chart-card">
+            <div class="label" style="margin-bottom:12px">Balanço da rede diário</div>
+            <div class="chart-wrap"><canvas id="graficoSaldo"></canvas></div>
+        </div>
+    </div>
+
+    <h2 class="section-title">HISTÓRICO MENSAL</h2>
+    <div class="card chart-card">
+        <div class="label" style="margin-bottom:12px">Consumo da rede x Solar exportada por mês</div>
+        <div class="chart-wrap"><canvas id="graficoMensal"></canvas></div>
+    </div>
+</main>
+
+<script src="gestao.js?v=20260829"></script>
+</body>
+</html>
 
 function numero(valor) {
 
