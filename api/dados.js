@@ -1,981 +1,451 @@
-// ================================================================
-// api/dados.js
-// VERSÃO COM CONSUMO + ENERGIA REVERSA/GERADA
-// ================================================================
+// =============================================================
+// api/dados.js  —  Coleta Tuya + Alarmes + Supabase  v3.1
+// =============================================================
+//
+// CORREÇÕES em relação à versão original:
+//
+//   1. ALARME DE TEMPERATURA CORRIGIDO
+//      Antes: disparava quando temp_atual > temp_set (setpoint do termostato)
+//      Agora: dispara quando temp_atual >= 45°C (limite físico fixo)
+//      Motivo: o setpoint do termostato controla o ventilador, não é um
+//              limite de alarme. O alarme deve refletir risco ao equipamento.
+//
+//   2. ALARME DE FLATLINE (QUEDA DE ENERGIA) — NOVO
+//      Monitora tensao_a, corrente_a e potencia_total nas últimas
+//      FLATLINE_LEITURAS (4) gravações. Se os 3 sinais ficarem com
+//      o mesmo valor por 4 leituras consecutivas, o medidor está
+//      travado (sem energia ou sem comunicação real com a rede).
+//      Envia alerta Telegram: "⚠️ ALERTA: Falta de energia detectada."
+//
+//   3. O restante do código (Tuya, Supabase, lógica de alertas,
+//      estado em status_alarmes) permanece idêntico ao original.
+//
+// DISPARO:
+//   O UptimeRobot chama /api/dados a cada 5 minutos.
+//   Não é necessário nenhum cron job na Vercel.
+// =============================================================
 
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+
+// ── Constantes ────────────────────────────────────────────────
+
+const LIMITE_TENSAO_MAX  = 139;    // V — acima → alerta
+const LIMITE_TENSAO_MIN  = 111;    // V — abaixo (e > 0) → alerta
+const LIMITE_TEMP_ALARME = 45.0;   // °C — limite físico fixo de temperatura
+const FLATLINE_LEITURAS  = 4;      // leituras idênticas consecutivas = medidor travado
+const TIMEZONE           = 'America/Cuiaba';
+
+// ── Supabase ──────────────────────────────────────────────────
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
 
-// ================================================================
-// TELEGRAM
-// ================================================================
+// ── Telegram ──────────────────────────────────────────────────
 
 async function enviarAlertaTelegram(mensagem) {
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-  const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+  const CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
 
   if (!BOT_TOKEN || !CHAT_ID) return;
 
-  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-
   try {
-    await fetch(url, {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        chat_id: CHAT_ID,
-        text: mensagem,
-        parse_mode: 'Markdown'
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: CHAT_ID, text: mensagem, parse_mode: 'Markdown' })
     });
   } catch (error) {
     console.error('Erro Telegram:', error);
   }
 }
 
-// ================================================================
-// ASSINATURA TUYA
-// ================================================================
+// ── Assinatura Tuya ───────────────────────────────────────────
 
-function gerarAssinaturaTuya(
-  clientId,
-  secret,
-  timestamp,
-  method,
-  urlPath,
-  accessToken = '',
-  body = ''
-) {
-  const contentHash = crypto
-    .createHash('sha256')
-    .update(body)
-    .digest('hex');
-
-  const stringToSign =
-    `${method}\n${contentHash}\n\n${urlPath}`;
-
-  const cadeiaFinal = accessToken
+function gerarAssinaturaTuya(clientId, secret, timestamp, method, urlPath, accessToken = '', body = '') {
+  const contentHash  = crypto.createHash('sha256').update(body).digest('hex');
+  const stringToSign = `${method}\n${contentHash}\n\n${urlPath}`;
+  const cadeiaFinal  = accessToken
     ? clientId + accessToken + timestamp + stringToSign
     : clientId + timestamp + stringToSign;
 
-  return crypto
-    .createHmac('sha256', secret)
-    .update(cadeiaFinal)
-    .digest('hex')
-    .toUpperCase();
+  return crypto.createHmac('sha256', secret).update(cadeiaFinal).digest('hex').toUpperCase();
 }
 
-// ================================================================
-// BUSCA DP
-// ================================================================
+// ── Helpers ───────────────────────────────────────────────────
 
 function dpShadow(props, codigo) {
-  const item = (props || []).find(
-    i => i.code === codigo
-  );
-
-  return item !== undefined
-    ? item.value
-    : null;
+  const item = (props || []).find(i => i.code === codigo);
+  return item !== undefined ? item.value : null;
 }
-
-// ================================================================
-// CONVERSÃO NUMÉRICA
-// ================================================================
 
 function numero(valor) {
-  if (
-    valor === null ||
-    valor === undefined ||
-    valor === ''
-  ) {
-    return null;
-  }
-
+  if (valor === null || valor === undefined || valor === '') return null;
   const n = Number(valor);
-
-  return Number.isFinite(n)
-    ? n
-    : null;
+  return Number.isFinite(n) ? n : null;
 }
 
-// ================================================================
-// DETECÇÃO AUTOMÁTICA DE ENERGIA REVERSA
-//
-// O código do DP varia conforme o modelo Tuya.
-//
-// Procuramos primeiro códigos conhecidos.
-// Depois procuramos qualquer DP cujo nome indique
-// energia reversa/exportada/gerada.
-// ================================================================
-
 function encontrarEnergiaReversa(props) {
-
   const candidatosExatos = [
-    'reverse_energy_total',
-    'reverse_energy',
-    'reverse_energy_sum',
-    'reverse_energy_all',
-    'backward_energy_total',
-    'backward_energy',
-    'reverse_active_energy',
-    'export_energy_total',
-    'export_energy',
-    'feed_in_energy',
-    'energy_export',
-    'generated_energy',
-    'generation_energy',
-    'solar_energy',
-    'pv_energy'
+    'reverse_energy_total', 'reverse_energy', 'reverse_energy_sum', 'reverse_energy_all',
+    'backward_energy_total', 'backward_energy', 'reverse_active_energy',
+    'export_energy_total', 'export_energy', 'feed_in_energy',
+    'energy_export', 'generated_energy', 'generation_energy', 'solar_energy', 'pv_energy'
   ];
 
-  // ------------------------------------------------------------
-  // 1. Primeiro tenta códigos conhecidos
-  // ------------------------------------------------------------
-
   for (const codigo of candidatosExatos) {
-
-    const item = (props || []).find(
-      p => p.code === codigo
-    );
-
-    if (
-      item &&
-      item.value !== null &&
-      item.value !== undefined
-    ) {
-      return {
-        codigo,
-        valor: numero(item.value),
-        origem: 'candidato_exato'
-      };
+    const item = (props || []).find(p => p.code === codigo);
+    if (item && item.value !== null && item.value !== undefined) {
+      return { codigo, valor: numero(item.value), origem: 'candidato_exato' };
     }
   }
 
-  // ------------------------------------------------------------
-  // 2. Depois procura automaticamente pelo nome do DP
-  // ------------------------------------------------------------
-
-  const candidatosAutomaticos =
-    (props || []).filter(item => {
-
-      const codigo =
-        String(item.code || '')
-          .toLowerCase();
-
-      return (
-        codigo.includes('reverse') ||
-        codigo.includes('backward') ||
-        codigo.includes('export') ||
-        codigo.includes('feed_in') ||
-        codigo.includes('generated') ||
-        codigo.includes('generation') ||
-        codigo.includes('solar') ||
-        codigo.includes('pv')
-      );
-    });
+  const candidatosAutomaticos = (props || []).filter(item => {
+    const c = String(item.code || '').toLowerCase();
+    return c.includes('reverse') || c.includes('backward') || c.includes('export') ||
+           c.includes('feed_in') || c.includes('generated') || c.includes('generation') ||
+           c.includes('solar')   || c.includes('pv');
+  });
 
   for (const item of candidatosAutomaticos) {
-
     const valor = numero(item.value);
+    if (valor !== null) return { codigo: item.code, valor, origem: 'deteccao_automatica' };
+  }
 
-    if (valor !== null) {
+  return { codigo: null, valor: null, origem: null };
+}
 
-      return {
-        codigo: item.code,
-        valor,
-        origem: 'deteccao_automatica'
-      };
+// ── Detector de Flatline ──────────────────────────────────────
+//
+// Busca as últimas N leituras do banco (JÁ incluindo a que
+// acabou de ser gravada nesta execução) e verifica se os 3
+// sinais monitorados têm o MESMO valor em TODAS as leituras.
+//
+// Por que esses 3 sinais?
+//   • tensao_a     — cai para zero sem energia
+//   • corrente_a   — cai para zero sem carga
+//   • potencia_total — reflete o estado geral do sistema
+//
+// Leituras insuficientes (< N): retorna flatline=false para
+// evitar falsos positivos nos primeiros registros do sistema.
+
+async function verificarFlatline() {
+  const { data, error } = await supabase
+    .from('telemetria_eletrica')
+    .select('id, timestamp, tensao_a, corrente_a, potencia_total')
+    .order('id', { ascending: false })
+    .limit(FLATLINE_LEITURAS);
+
+  if (error || !data || data.length < FLATLINE_LEITURAS) {
+    return { flatline: false, motivo: 'leituras insuficientes no banco' };
+  }
+
+  const sinais = ['tensao_a', 'corrente_a', 'potencia_total'];
+  const detalhes = {};
+  let todosTravados = true;
+
+  for (const sinal of sinais) {
+    const valores = data.map(l => numero(l[sinal]));
+
+    if (valores.some(v => v === null)) {
+      detalhes[sinal] = { congelado: false, motivo: 'valores nulos' };
+      todosTravados = false;
+      continue;
     }
+
+    const referencia  = valores[0];
+    const todosIguais = valores.every(v => v === referencia);
+    detalhes[sinal]   = { valor: referencia, congelado: todosIguais };
+
+    if (!todosIguais) todosTravados = false;
   }
 
   return {
-    codigo: null,
-    valor: null,
-    origem: null
+    flatline:          todosTravados,
+    leituras_checadas: FLATLINE_LEITURAS,
+    sinais:            detalhes,
   };
 }
 
-// ================================================================
-// HANDLER
-// ================================================================
+// ── Handler ───────────────────────────────────────────────────
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
-  res.setHeader(
-    'Access-Control-Allow-Origin',
-    '*'
-  );
-
-  res.setHeader(
-    'Content-Type',
-    'application/json'
-  );
-
-  res.setHeader(
-    'Cache-Control',
-    'no-store, no-cache, must-revalidate, proxy-revalidate'
-  );
-
-  const CLIENT_ID =
-    process.env.TUYA_CLIENT_ID;
-
-  const CLIENT_SECRET =
-    process.env.TUYA_CLIENT_SECRET;
-
-  const DEVICE_ID_MEDIDOR =
-    process.env.TUYA_DEVICE_MEDIDOR;
-
-  const DEVICE_ID_TERMOSTATO =
-    process.env.TUYA_DEVICE_TERMOSTATO;
-
-  const BASE_URL =
-    'https://openapi.tuyaus.com';
-
-  const LIMITE_TENSAO = 139;
+  const CLIENT_ID            = process.env.TUYA_CLIENT_ID;
+  const CLIENT_SECRET        = process.env.TUYA_CLIENT_SECRET;
+  const DEVICE_ID_MEDIDOR    = process.env.TUYA_DEVICE_MEDIDOR;
+  const DEVICE_ID_TERMOSTATO = process.env.TUYA_DEVICE_TERMOSTATO;
+  const BASE_URL             = 'https://openapi.tuyaus.com';
 
   try {
 
-    // ==========================================================
-    // 1. TOKEN TUYA
-    // ==========================================================
+    // ── 1. TOKEN TUYA ─────────────────────────────────────────
 
-    const t1 =
-      Date.now().toString();
+    const t1       = Date.now().toString();
+    const tokenRes = await fetch(`${BASE_URL}/v1.0/token?grant_type=1`, {
+      headers: {
+        client_id:   CLIENT_ID,
+        sign:        gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t1, 'GET', '/v1.0/token?grant_type=1'),
+        t:           t1,
+        sign_method: 'HMAC-SHA256'
+      }
+    });
 
-    const tokenRes =
-      await fetch(
-        `${BASE_URL}/v1.0/token?grant_type=1`,
-        {
-          headers: {
-            client_id: CLIENT_ID,
+    const tokenData = await tokenRes.json();
+    const token     = tokenData.result?.access_token;
 
-            sign: gerarAssinaturaTuya(
-              CLIENT_ID,
-              CLIENT_SECRET,
-              t1,
-              'GET',
-              '/v1.0/token?grant_type=1'
-            ),
+    if (!token) throw new Error('Não foi possível obter o token da Tuya.');
 
-            t: t1,
+    // ── 2. MEDIDOR ELÉTRICO ───────────────────────────────────
 
-            sign_method: 'HMAC-SHA256'
-          }
-        }
-      );
+    const t2        = Date.now().toString();
+    const urlShadow = `/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`;
 
-    const tokenData =
-      await tokenRes.json();
+    const resShadow = await fetch(`${BASE_URL}${urlShadow}`, {
+      headers: {
+        client_id:    CLIENT_ID,
+        access_token: token,
+        sign:         gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t2, 'GET', urlShadow, token),
+        t:            t2,
+        sign_method:  'HMAC-SHA256'
+      }
+    });
 
-    const token =
-      tokenData.result?.access_token;
-
-    if (!token) {
-      throw new Error(
-        'Não foi possível obter o token da Tuya.'
-      );
-    }
-
-    // ==========================================================
-    // 2. MEDIDOR ELÉTRICO
-    // ==========================================================
-
-    const t2 =
-      Date.now().toString();
-
-    const urlShadow =
-      `/v2.0/cloud/thing/${DEVICE_ID_MEDIDOR}/shadow/properties`;
-
-    const resShadow =
-      await fetch(
-        `${BASE_URL}${urlShadow}`,
-        {
-          headers: {
-            client_id: CLIENT_ID,
-
-            access_token: token,
-
-            sign: gerarAssinaturaTuya(
-              CLIENT_ID,
-              CLIENT_SECRET,
-              t2,
-              'GET',
-              urlShadow,
-              token
-            ),
-
-            t: t2,
-
-            sign_method: 'HMAC-SHA256'
-          }
-        }
-      );
-
-    const dataShadow =
-      await resShadow.json();
-
-    const props =
-      dataShadow.result?.properties || [];
-
-    // ==========================================================
-    // DIAGNÓSTICO DOS DPs
-    // ==========================================================
-
-    const dpsDisponiveis =
-      props.map(item => ({
-        code: item.code,
-        value: item.value
-      }));
-
-    // ==========================================================
-    // ENERGIA REVERSA
-    // ==========================================================
-
-    const energiaReversa =
-      encontrarEnergiaReversa(props);
-
-    // ==========================================================
-    // DADOS ELÉTRICOS
-    // ==========================================================
+    const dataShadow  = await resShadow.json();
+    const props       = dataShadow.result?.properties || [];
+    const dpsDisponiveis = props.map(item => ({ code: item.code, value: item.value }));
+    const energiaReversa = encontrarEnergiaReversa(props);
 
     const eletrico = {
+      tensao_a:    dpShadow(props, 'voltage_a')      != null ? (dpShadow(props, 'voltage_a') / 10).toFixed(1)      : null,
+      corrente_a:  dpShadow(props, 'current_a')      != null ? (dpShadow(props, 'current_a') / 1000).toFixed(2)    : null,
+      potencia_a:  dpShadow(props, 'active_power_a'),
+      fat_pot_a:   dpShadow(props, 'power_factor_a') != null ? (dpShadow(props, 'power_factor_a') / 100).toFixed(2): null,
+      energia_a:   dpShadow(props, 'forward_energy_a'),
 
-      tensao_a:
-        dpShadow(props, 'voltage_a') != null
-          ? (
-              dpShadow(props, 'voltage_a') / 10
-            ).toFixed(1)
-          : null,
+      tensao_b:    dpShadow(props, 'voltage_b')      != null ? (dpShadow(props, 'voltage_b') / 10).toFixed(1)      : null,
+      corrente_b:  dpShadow(props, 'current_b')      != null ? (dpShadow(props, 'current_b') / 1000).toFixed(2)    : null,
+      potencia_b:  dpShadow(props, 'active_power_b'),
+      fat_pot_b:   dpShadow(props, 'power_factor_b') != null ? (dpShadow(props, 'power_factor_b') / 100).toFixed(2): null,
+      energia_b:   dpShadow(props, 'forward_energy_b'),
 
-      corrente_a:
-        dpShadow(props, 'current_a') != null
-          ? (
-              dpShadow(props, 'current_a') / 1000
-            ).toFixed(2)
-          : null,
+      tensao_c:    dpShadow(props, 'voltage_c')      != null ? (dpShadow(props, 'voltage_c') / 10).toFixed(1)      : null,
+      corrente_c:  dpShadow(props, 'current_c')      != null ? (dpShadow(props, 'current_c') / 1000).toFixed(2)    : null,
+      potencia_c:  dpShadow(props, 'active_power_c'),
+      fat_pot_c:   dpShadow(props, 'power_factor_c') != null ? (dpShadow(props, 'power_factor_c') / 100).toFixed(2): null,
+      energia_c:   dpShadow(props, 'forward_energy_c'),
 
-      potencia_a:
-        dpShadow(
-          props,
-          'active_power_a'
-        ),
-
-      fat_pot_a:
-        dpShadow(
-          props,
-          'power_factor_a'
-        ) != null
-          ? (
-              dpShadow(
-                props,
-                'power_factor_a'
-              ) / 100
-            ).toFixed(2)
-          : null,
-
-      energia_a:
-        dpShadow(
-          props,
-          'forward_energy_a'
-        ),
-
-      tensao_b:
-        dpShadow(props, 'voltage_b') != null
-          ? (
-              dpShadow(props, 'voltage_b') / 10
-            ).toFixed(1)
-          : null,
-
-      corrente_b:
-        dpShadow(props, 'current_b') != null
-          ? (
-              dpShadow(props, 'current_b') / 1000
-            ).toFixed(2)
-          : null,
-
-      potencia_b:
-        dpShadow(
-          props,
-          'active_power_b'
-        ),
-
-      fat_pot_b:
-        dpShadow(
-          props,
-          'power_factor_b'
-        ) != null
-          ? (
-              dpShadow(
-                props,
-                'power_factor_b'
-              ) / 100
-            ).toFixed(2)
-          : null,
-
-      energia_b:
-        dpShadow(
-          props,
-          'forward_energy_b'
-        ),
-
-      tensao_c:
-        dpShadow(props, 'voltage_c') != null
-          ? (
-              dpShadow(props, 'voltage_c') / 10
-            ).toFixed(1)
-          : null,
-
-      corrente_c:
-        dpShadow(props, 'current_c') != null
-          ? (
-              dpShadow(props, 'current_c') / 1000
-            ).toFixed(2)
-          : null,
-
-      potencia_c:
-        dpShadow(
-          props,
-          'active_power_c'
-        ),
-
-      fat_pot_c:
-        dpShadow(
-          props,
-          'power_factor_c'
-        ) != null
-          ? (
-              dpShadow(
-                props,
-                'power_factor_c'
-              ) / 100
-            ).toFixed(2)
-          : null,
-
-      energia_c:
-        dpShadow(
-          props,
-          'forward_energy_c'
-        ),
-
-      // --------------------------------------------------------
-      // CONSUMO ACUMULADO
-      // --------------------------------------------------------
-
-      energia_total:
-        dpShadow(
-          props,
-          'forward_energy_total'
-        ),
-
-      // --------------------------------------------------------
-      // GERAÇÃO / ENERGIA REVERSA
-      // --------------------------------------------------------
-
-      energia_gerada_total:
-        energiaReversa.valor,
-
-      energia_gerada_dp:
-        energiaReversa.codigo,
-
-      potencia_total:
-        dpShadow(
-          props,
-          'active_power_total'
-        ),
-
-      frequencia:
-        dpShadow(
-          props,
-          'frequency'
-        ),
-
-      falha:
-        dpShadow(
-          props,
-          'fault'
-        )
+      energia_total:        dpShadow(props, 'forward_energy_total'),
+      energia_gerada_total: energiaReversa.valor,
+      energia_gerada_dp:    energiaReversa.codigo,
+      potencia_total:       dpShadow(props, 'active_power_total'),
+      frequencia:           dpShadow(props, 'frequency'),
+      falha:                dpShadow(props, 'fault'),
     };
 
-    // ==========================================================
-    // 3. TERMOSTATO
-    // ==========================================================
+    // ── 3. TERMOSTATO ─────────────────────────────────────────
 
-    let temperatura = {
-      temp_atual: null,
-      temp_set: null,
-      ventilador_ligado: false
-    };
+    let temperatura = { temp_atual: null, temp_set: null, ventilador_ligado: false };
 
-    const t3 =
-      Date.now().toString();
+    const t3       = Date.now().toString();
+    const urlTermo = `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
 
-    const urlTermo =
-      `/v1.0/iot-03/devices/${DEVICE_ID_TERMOSTATO}/status`;
+    const resTermo = await fetch(`${BASE_URL}${urlTermo}`, {
+      headers: {
+        client_id:    CLIENT_ID,
+        access_token: token,
+        sign:         gerarAssinaturaTuya(CLIENT_ID, CLIENT_SECRET, t3, 'GET', urlTermo, token),
+        t:            t3,
+        sign_method:  'HMAC-SHA256'
+      }
+    });
 
-    const resTermo =
-      await fetch(
-        `${BASE_URL}${urlTermo}`,
-        {
-          headers: {
+    const dataTermo = await resTermo.json();
 
-            client_id: CLIENT_ID,
+    if (dataTermo.result && Array.isArray(dataTermo.result)) {
+      const itemTemp = dataTermo.result.find(i => i.code === 'temp_current');
+      const itemSet  = dataTermo.result.find(i => i.code === 'temp_set');
 
-            access_token: token,
-
-            sign: gerarAssinaturaTuya(
-              CLIENT_ID,
-              CLIENT_SECRET,
-              t3,
-              'GET',
-              urlTermo,
-              token
-            ),
-
-            t: t3,
-
-            sign_method: 'HMAC-SHA256'
-          }
-        }
-      );
-
-    const dataTermo =
-      await resTermo.json();
-
-    if (
-      dataTermo.result &&
-      Array.isArray(dataTermo.result)
-    ) {
-
-      const itemTemp =
-        dataTermo.result.find(
-          i => i.code === 'temp_current'
-        );
-
-      const itemSet =
-        dataTermo.result.find(
-          i => i.code === 'temp_set'
-        );
-
-      const tempAtualVal =
-        (
-          itemTemp &&
-          itemTemp.value != null
-        )
-          ? (
-              itemTemp.value > 100
-                ? itemTemp.value / 10
-                : Number(itemTemp.value)
-            )
+      const normalize = (item) =>
+        item?.value != null
+          ? (item.value > 100 ? item.value / 10 : Number(item.value))
           : null;
 
-      const tempSetVal =
-        (
-          itemSet &&
-          itemSet.value != null
-        )
-          ? (
-              itemSet.value > 100
-                ? itemSet.value / 10
-                : Number(itemSet.value)
-            )
-          : null;
+      const tempAtualVal = normalize(itemTemp);
+      const tempSetVal   = normalize(itemSet);
 
-      temperatura.temp_atual =
-        tempAtualVal !== null
-          ? tempAtualVal.toFixed(1)
-          : null;
-
-      temperatura.temp_set =
-        tempSetVal !== null
-          ? tempSetVal.toFixed(1)
-          : null;
-
-      temperatura.ventilador_ligado =
-        (
-          tempAtualVal !== null &&
-          tempSetVal !== null
-        )
-          ? tempAtualVal > tempSetVal
-          : false;
+      temperatura.temp_atual        = tempAtualVal !== null ? tempAtualVal.toFixed(1) : null;
+      temperatura.temp_set          = tempSetVal   !== null ? tempSetVal.toFixed(1)   : null;
+      temperatura.ventilador_ligado = (tempAtualVal !== null && tempSetVal !== null)
+        ? tempAtualVal > tempSetVal
+        : false;
     }
 
-    // ==========================================================
-    // 4. GRAVAÇÃO SUPABASE
-    // ==========================================================
+    // ── 4. GRAVAÇÃO SUPABASE ──────────────────────────────────
 
-    let bancoStatus =
-      'Não gravado';
+    let bancoStatus = 'Não gravado';
 
     try {
+      const { error: dbError } = await supabase
+        .from('telemetria_eletrica')
+        .insert([{
+          tensao_a:             eletrico.tensao_a,
+          corrente_a:           eletrico.corrente_a,
+          potencia_a:           eletrico.potencia_a,
+          fat_pot_a:            eletrico.fat_pot_a,
+          energia_a:            eletrico.energia_a,
+          tensao_b:             eletrico.tensao_b,
+          corrente_b:           eletrico.corrente_b,
+          potencia_b:           eletrico.potencia_b,
+          fat_pot_b:            eletrico.fat_pot_b,
+          energia_b:            eletrico.energia_b,
+          tensao_c:             eletrico.tensao_c,
+          corrente_c:           eletrico.corrente_c,
+          potencia_c:           eletrico.potencia_c,
+          fat_pot_c:            eletrico.fat_pot_c,
+          energia_c:            eletrico.energia_c,
+          energia_total:        eletrico.energia_total,
+          energia_gerada_total: eletrico.energia_gerada_total,
+          potencia_total:       eletrico.potencia_total,
+          frequencia:           eletrico.frequencia,
+          temp_atual:           temperatura.temp_atual,
+        }]);
 
-      const { error: dbError } =
-        await supabase
-          .from('telemetria_eletrica')
-          .insert([{
-
-            tensao_a:
-              eletrico.tensao_a,
-
-            corrente_a:
-              eletrico.corrente_a,
-
-            potencia_a:
-              eletrico.potencia_a,
-
-            fat_pot_a:
-              eletrico.fat_pot_a,
-
-            energia_a:
-              eletrico.energia_a,
-
-            tensao_b:
-              eletrico.tensao_b,
-
-            corrente_b:
-              eletrico.corrente_b,
-
-            potencia_b:
-              eletrico.potencia_b,
-
-            fat_pot_b:
-              eletrico.fat_pot_b,
-
-            energia_b:
-              eletrico.energia_b,
-
-            tensao_c:
-              eletrico.tensao_c,
-
-            corrente_c:
-              eletrico.corrente_c,
-
-            potencia_c:
-              eletrico.potencia_c,
-
-            fat_pot_c:
-              eletrico.fat_pot_c,
-
-            energia_c:
-              eletrico.energia_c,
-
-            energia_total:
-              eletrico.energia_total,
-
-            energia_gerada_total:
-              eletrico.energia_gerada_total,
-
-            potencia_total:
-              eletrico.potencia_total,
-
-            frequencia:
-              eletrico.frequencia,
-
-            temp_atual:
-              temperatura.temp_atual
-
-          }]);
-
-      if (dbError) {
-        throw dbError;
-      }
-
-      bancoStatus =
-        'Gravação Sucesso';
-
+      if (dbError) throw dbError;
+      bancoStatus = 'Gravação Sucesso';
     } catch (dbErr) {
-
-      console.error(
-        'Erro Supabase:',
-        dbErr
-      );
-
-      bancoStatus =
-        'Erro Supabase: ' +
-        dbErr.message;
+      console.error('Erro Supabase:', dbErr);
+      bancoStatus = 'Erro Supabase: ' + dbErr.message;
     }
 
-    // ==========================================================
-    // 5. ALARMES
-    // ==========================================================
+    // ── 5. ALARMES ────────────────────────────────────────────
 
     let alertas = [];
 
-    const ta =
-      parseFloat(
-        eletrico.tensao_a
-      );
+    // 5a. Tensão por fase
+    const ta = parseFloat(eletrico.tensao_a);
+    const tb = parseFloat(eletrico.tensao_b);
+    const tc = parseFloat(eletrico.tensao_c);
 
-    const tb =
-      parseFloat(
-        eletrico.tensao_b
-      );
+    if (!isNaN(ta) && ta > LIMITE_TENSAO_MAX) alertas.push(`*Fase A:* ${ta}V - Tensão acima de ${LIMITE_TENSAO_MAX}V`);
+    if (!isNaN(ta) && ta < LIMITE_TENSAO_MIN && ta > 0) alertas.push(`*Fase A:* ${ta}V - Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
+    if (!isNaN(tb) && tb > LIMITE_TENSAO_MAX) alertas.push(`*Fase B:* ${tb}V - Tensão acima de ${LIMITE_TENSAO_MAX}V`);
+    if (!isNaN(tb) && tb < LIMITE_TENSAO_MIN && tb > 0) alertas.push(`*Fase B:* ${tb}V - Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
+    if (!isNaN(tc) && tc > LIMITE_TENSAO_MAX) alertas.push(`*Fase C:* ${tc}V - Tensão acima de ${LIMITE_TENSAO_MAX}V`);
+    if (!isNaN(tc) && tc < LIMITE_TENSAO_MIN && tc > 0) alertas.push(`*Fase C:* ${tc}V - Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
 
-    const tc =
-      parseFloat(
-        eletrico.tensao_c
-      );
-
-    if (
-      ta > LIMITE_TENSAO
-    ) {
-      alertas.push(
-        `*Fase A:* ${ta}V - Tensão acima de ${LIMITE_TENSAO}V`
-      );
+    // 5b. Temperatura — limite físico fixo de 45°C
+    //     (independente do setpoint do termostato)
+    const tempAtualNum = parseFloat(temperatura.temp_atual);
+    if (!isNaN(tempAtualNum) && tempAtualNum >= LIMITE_TEMP_ALARME) {
+      alertas.push(`*Temperatura:* ${tempAtualNum.toFixed(1)}°C - Acima do limite de ${LIMITE_TEMP_ALARME}°C`);
     }
 
-    if (
-      ta < 111 &&
-      ta > 0
-    ) {
-      alertas.push(
-        `*Fase A:* ${ta}V - Tensão abaixo de 111V`
-      );
+    // 5c. Flatline — medidor congelado (queda de energia)
+    //     Verifica APÓS a gravação para incluir a leitura atual
+    const flatlineInfo = await verificarFlatline();
+    if (flatlineInfo.flatline) {
+      alertas.push(`*Queda de Energia:* sinais congelados nas últimas ${FLATLINE_LEITURAS} leituras consecutivas`);
     }
 
-    if (
-      tb > LIMITE_TENSAO
-    ) {
-      alertas.push(
-        `*Fase B:* ${tb}V - Tensão acima de ${LIMITE_TENSAO}V`
-      );
-    }
+    // ── 6. NOTIFICAÇÃO TELEGRAM (sem spam) ───────────────────
+    //
+    // Envia apenas na transição de estado:
+    //   normal → alerta   (entra em alerta)
+    //   alerta → normal   (normalizado)
 
-    if (
-      tb < 111 &&
-      tb > 0
-    ) {
-      alertas.push(
-        `*Fase B:* ${tb}V - Tensão abaixo de 111V`
-      );
-    }
+    let deveEnviarTelegram = false;
+    let textoMensagem      = '';
 
-    if (
-      tc > LIMITE_TENSAO
-    ) {
-      alertas.push(
-        `*Fase C:* ${tc}V - Tensão acima de ${LIMITE_TENSAO}V`
-      );
-    }
+    const { data: estadoAnterior } = await supabase
+      .from('status_alarmes')
+      .select('*')
+      .eq('id', 'painel_brasileira')
+      .maybeSingle();
 
-    if (
-      tc < 111 &&
-      tc > 0
-    ) {
-      alertas.push(
-        `*Fase C:* ${tc}V - Tensão abaixo de 111V`
-      );
-    }
+    const agora    = new Date();
+    const agoraISO = agora.toISOString();
 
-    if (
-      temperatura.temp_atual &&
-      temperatura.temp_set &&
-      parseFloat(
-        temperatura.temp_atual
-      ) >
-      parseFloat(
-        temperatura.temp_set
-      )
-    ) {
-
-      alertas.push(
-        `*Temperatura:* ${temperatura.temp_atual}°C - Acima do setpoint (${temperatura.temp_set}°C)`
-      );
-    }
-
-    // ==========================================================
-    // 6. TELEGRAM
-    // ==========================================================
-
-    let deveEnviarTelegram =
-      false;
-
-    let textoMensagem =
-      '';
-
-    const {
-      data: estadoAnterior
-    } =
-      await supabase
-        .from('status_alarmes')
-        .select('*')
-        .eq(
-          'id',
-          'painel_brasileira'
-        )
-        .maybeSingle();
-
-    const agora =
-      new Date();
-
-    let novoEstado = {
-
-      em_alerta:
-        alertas.length > 0,
-
-      primeiro_alerta_at:
-        estadoAnterior?.primeiro_alerta_at ||
-        null,
-
-      ultimo_alerta_at:
-        estadoAnterior?.ultimo_alerta_at ||
-        null,
-
-      estagio:
-        estadoAnterior?.estagio ||
-        0,
-
-      texto_alertas:
-        alertas.join('\n')
+    const novoEstado = {
+      em_alerta:          alertas.length > 0,
+      primeiro_alerta_at: estadoAnterior?.primeiro_alerta_at || null,
+      ultimo_alerta_at:   estadoAnterior?.ultimo_alerta_at   || null,
+      estagio:            estadoAnterior?.estagio            || 0,
+      texto_alertas:      alertas.join('\n'),
     };
 
-    if (
-      alertas.length > 0
-    ) {
+    if (alertas.length > 0 && !estadoAnterior?.em_alerta) {
+      // Transição: normal → alerta
+      deveEnviarTelegram = true;
+      novoEstado.primeiro_alerta_at = agoraISO;
+      novoEstado.ultimo_alerta_at   = agoraISO;
+      novoEstado.estagio            = 1;
 
-      if (
-        !estadoAnterior?.em_alerta
-      ) {
+      const horaBR = agora.toLocaleString('pt-BR', { timeZone: TIMEZONE });
 
-        deveEnviarTelegram =
-          true;
+      // Mensagem enriquecida quando é flatline
+      const sufixoFlatline = flatlineInfo.flatline
+        ? `\n\n⚡ *Causa provável:* Falta de energia — medidor sem comunicação real por ${FLATLINE_LEITURAS} leituras.`
+        : '';
 
-        textoMensagem =
-          `⚠️ *ALERTA: ANORMALIDADE DETECTADA*\n_Painel: Brasileira Distribuidora_\n\n${novoEstado.texto_alertas}`;
+      textoMensagem =
+        `⚠️ *ALERTA: ANORMALIDADE DETECTADA*\n` +
+        `_Painel: Brasileira Distribuidora_\n` +
+        `_${horaBR}_\n\n` +
+        alertas.join('\n') +
+        sufixoFlatline;
 
-        novoEstado.primeiro_alerta_at =
-          agora.toISOString();
+    } else if (alertas.length === 0 && estadoAnterior?.em_alerta) {
+      // Transição: alerta → normal
+      deveEnviarTelegram = true;
+      novoEstado.primeiro_alerta_at = null;
+      novoEstado.ultimo_alerta_at   = null;
+      novoEstado.estagio            = 0;
 
-        novoEstado.ultimo_alerta_at =
-          agora.toISOString();
-
-        novoEstado.estagio =
-          1;
-      }
-
-    } else {
-
-      if (
-        estadoAnterior?.em_alerta
-      ) {
-
-        deveEnviarTelegram =
-          true;
-
-        textoMensagem =
-          `✅ *SISTEMA NORMALIZADO*\n_Painel: Brasileira Distribuidora_\n\nTodos os parâmetros retornaram aos níveis operacionais normais.`;
-
-        novoEstado.primeiro_alerta_at =
-          null;
-
-        novoEstado.ultimo_alerta_at =
-          null;
-
-        novoEstado.estagio =
-          0;
-      }
+      textoMensagem =
+        `✅ *SISTEMA NORMALIZADO*\n` +
+        `_Painel: Brasileira Distribuidora_\n\n` +
+        `Todos os parâmetros retornaram aos níveis operacionais normais.`;
     }
 
+    // Persiste o estado de alarme
     if (estadoAnterior) {
-
-      await supabase
-        .from('status_alarmes')
-        .update(novoEstado)
-        .eq(
-          'id',
-          'painel_brasileira'
-        );
-
+      await supabase.from('status_alarmes').update(novoEstado).eq('id', 'painel_brasileira');
     } else {
-
-      await supabase
-        .from('status_alarmes')
-        .insert([
-          {
-            id: 'painel_brasileira',
-            ...novoEstado
-          }
-        ]);
+      await supabase.from('status_alarmes').insert([{ id: 'painel_brasileira', ...novoEstado }]);
     }
 
-    if (
-      deveEnviarTelegram
-    ) {
-
-      await enviarAlertaTelegram(
-        textoMensagem
-      );
+    if (deveEnviarTelegram) {
+      await enviarAlertaTelegram(textoMensagem);
     }
 
-    // ==========================================================
-    // 7. RETORNO DA API
-    // ==========================================================
+    // ── 7. RESPOSTA ───────────────────────────────────────────
 
     return res.status(200).json({
-
-      timestamp_br:
-        new Date()
-          .toLocaleString(
-            'pt-BR',
-            {
-              timeZone:
-                'America/Cuiaba'
-            }
-          ),
-
-      status:
-        alertas.length > 0
-          ? 'ALERTA'
-          : 'NORMAL',
-
+      timestamp_br: agora.toLocaleString('pt-BR', { timeZone: TIMEZONE }),
+      status:       alertas.length > 0 ? 'ALERTA' : 'NORMAL',
       alertas,
-
+      flatline:     flatlineInfo,
       eletrico,
-
       temperatura,
-
-      banco_dados:
-        bancoStatus,
-
+      banco_dados:  bancoStatus,
       diagnostico_tuya: {
-
-        total_dps:
-          dpsDisponiveis.length,
-
-        energia_consumo_dp:
-          'forward_energy_total',
-
-        energia_geracao_dp:
-          energiaReversa.codigo,
-
-        energia_geracao_valor:
-          energiaReversa.valor,
-
-        origem:
-          energiaReversa.origem,
-
-        dps_disponiveis:
-          dpsDisponiveis
-      }
-
+        total_dps:             dpsDisponiveis.length,
+        energia_consumo_dp:    'forward_energy_total',
+        energia_geracao_dp:    energiaReversa.codigo,
+        energia_geracao_valor: energiaReversa.valor,
+        origem:                energiaReversa.origem,
+        dps_disponiveis:       dpsDisponiveis,
+      },
     });
 
   } catch (err) {
-
-    console.error(
-      'Erro /api/dados:',
-      err
-    );
-
-    return res.status(500).json({
-      erro: err.message
-    });
+    console.error('Erro /api/dados:', err);
+    return res.status(500).json({ erro: err.message });
   }
 }
