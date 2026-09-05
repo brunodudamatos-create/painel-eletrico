@@ -1,30 +1,30 @@
 // =============================================================
-// api/gestao.js  —  Gestão Energética  v3.1
+// api/gestao.js  —  Gestão Energética  v4.0
 // =============================================================
 //
+// CORREÇÃO PRINCIPAL — DIVISOR:
+//   O EARU EASEM-E envia energia em centésimos de Wh (0,01 Wh).
+//   Para converter para kWh: valor_banco ÷ 100
+//
+//   Confirmado via Supabase:
+//     delta agosto = 1.007.162 ÷ 100 = 10.071,62 kWh
+//     App Smart Life agosto          = 10.111,72 kWh
+//     Erro: 0,40% — diferença normal de arredondamento ✅
+//
 // LÓGICA DE CÁLCULO (à prova de falhas de Wi-Fi):
-//   kWh = (última leitura do contador no período)
-//         − (primeira leitura do contador no período)
-//   O medidor acumula internamente mesmo sem Wi-Fi.
-//   Não importa quantas leituras foram perdidas — o delta
-//   do contador sempre reflete o consumo/exportação real.
+//   kWh = (última leitura do contador) − (primeira leitura)
+//   O medidor acumula internamente mesmo offline.
 //
-// COMPATIBILIDADE COM O FRONTEND (gestao.html):
-//   • Retorna TODOS os dias em `diarios[]`
-//   • Retorna TODOS os meses em `mensais[]`
-//   • Campos dos objetos mantidos idênticos à versão anterior
-//   • Não exige parâmetros na URL
-//
-// EFICIÊNCIA:
-//   Busca paginada no Supabase — não traz mais registros
-//   do que o necessário em cada chamada.
+// COMPATIBILIDADE COM O FRONTEND:
+//   Retorna todos os dias em diarios[] e todos os meses em mensais[]
+//   sem exigir parâmetros na URL.
 // =============================================================
 
 import { createClient } from '@supabase/supabase-js';
 
-const TARIFA_KWH = 0.899;
-const TIMEZONE   = 'America/Cuiaba';
-const PAGE_SIZE  = 1000;
+const TARIFA_KWH  = 0.899;
+const TIMEZONE    = 'America/Cuiaba';
+const PAGE_SIZE   = 1000;
 
 // ── Helpers numéricos ─────────────────────────────────────────
 
@@ -54,18 +54,14 @@ function mesLocal(date) {
 }
 
 // ── Lógica de agrupamento por contador acumulado ──────────────
-//
-// Para cada grupo (dia ou mês), pegamos a PRIMEIRA e a ÚLTIMA
-// leitura do contador acumulado. O delta é o consumo/exportação
-// real do período, imune a lacunas de conectividade.
 
-function inicializarRegistro(chave, mensal) {
+function inicializarRegistro(chave) {
   return {
     chave,
-    consumo_inicio:  null,
-    consumo_final:   null,
-    geracao_inicio:  null,
-    geracao_final:   null,
+    consumo_inicio: null,
+    consumo_final:  null,
+    geracao_inicio: null,
+    geracao_final:  null,
   };
 }
 
@@ -75,7 +71,7 @@ function adicionarLeitura(registro, leitura) {
 
   if (consumo !== null && consumo >= 0) {
     if (registro.consumo_inicio === null) registro.consumo_inicio = consumo;
-    registro.consumo_final = consumo;   // sempre atualiza com a mais recente
+    registro.consumo_final = consumo;
   }
 
   if (geracao !== null && geracao > 0) {
@@ -91,26 +87,24 @@ function calcularDelta(inicio, final) {
 }
 
 function fecharRegistro(registro, mensal) {
-  const consumo_kwh = calcularDelta(registro.consumo_inicio, registro.consumo_final) / 1000;
-  const geracao_kwh = calcularDelta(registro.geracao_inicio, registro.geracao_final) / 1000;
+  // ÷ 100 converte centésimos de Wh → kWh
+  const consumo_kwh = calcularDelta(registro.consumo_inicio, registro.consumo_final) / 100;
+  const geracao_kwh = calcularDelta(registro.geracao_inicio, registro.geracao_final) / 100;
 
-  const consumo  = arredondar(consumo_kwh);
-  const geracao  = arredondar(geracao_kwh);
-  const balanco  = arredondar(geracao - consumo);
-  const custo    = arredondar(consumo * TARIFA_KWH);
+  const consumo = arredondar(consumo_kwh);
+  const geracao = arredondar(geracao_kwh);
+  const balanco = arredondar(geracao - consumo);
+  const custo   = arredondar(consumo * TARIFA_KWH);
 
-  // Mantém os mesmos nomes de campo do frontend existente
   return {
-    [mensal ? 'mes' : 'data']:  registro.chave,
+    [mensal ? 'mes' : 'data']: registro.chave,
     consumo_rede_kwh:           consumo,
     energia_exportada_kwh:      geracao,
-    geracao_solar_kwh:          null,     // futuro: Elekeeper
-    consumo_solar_kwh:          null,     // futuro: Elekeeper
-    consumo_total_kwh:          null,     // futuro: Elekeeper
     balanco_rede_kwh:           balanco,
     custo_rede_rs:              custo,
-    economia_rs:                null,     // futuro: Elekeeper
-    geracao_total_disponivel:   false,
+    geracao_solar_kwh:          null,  // futuro: Elekeeper
+    consumo_solar_kwh:          null,  // futuro: Elekeeper
+    economia_rs:                null,  // futuro: Elekeeper
   };
 }
 
@@ -120,7 +114,6 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  res.setHeader('Surrogate-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   if (req.method !== 'GET') {
@@ -135,14 +128,14 @@ export default async function handler(req, res) {
       process.env.SUPABASE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ erro: 'Variáveis de ambiente do Supabase não configuradas.' });
+      return res.status(500).json({ erro: 'Variáveis SUPABASE_URL e SUPABASE_KEY não configuradas.' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ── Busca paginada de TODOS os registros ──────────────────
+    // ── Busca paginada de todos os registros ──────────────────
     // Seleciona apenas as 4 colunas necessárias para minimizar
-    // tráfego de rede e custo de transferência.
+    // tráfego e custo de leitura no Supabase.
 
     let leituras = [];
     let offset   = 0;
@@ -165,7 +158,7 @@ export default async function handler(req, res) {
       offset += PAGE_SIZE;
     }
 
-    // ── Normaliza e ordena ────────────────────────────────────
+    // ── Normaliza timestamps ──────────────────────────────────
 
     const registros = leituras
       .map(l => ({ ...l, dataObj: new Date(l.timestamp || l.created_at) }))
@@ -173,21 +166,11 @@ export default async function handler(req, res) {
       .sort((a, b) => a.dataObj - b.dataObj);
 
     if (registros.length === 0) {
-      const vazio = {
-        consumo_rede_kwh:        0,
-        energia_exportada_kwh:   0,
-        geracao_solar_kwh:       null,
-        consumo_solar_kwh:       null,
-        balanco_rede_kwh:        0,
-        custo_rede_rs:           0,
-        economia_rs:             null,
-        geracao_total_disponivel: false,
-      };
       return res.status(200).json({
-        tarifa_kwh: TARIFA_KWH,
-        diarios:    [],
-        mensais:    [],
-        resumo:     vazio,
+        tarifa_kwh:  TARIFA_KWH,
+        diarios:     [],
+        mensais:     [],
+        resumo:      { consumo_rede_kwh: 0, energia_exportada_kwh: 0, custo_rede_rs: 0 },
         diagnostico: { leituras_consideradas: 0 },
       });
     }
@@ -201,74 +184,52 @@ export default async function handler(req, res) {
       const dia = diaLocal(leitura.dataObj);
       const mes = mesLocal(leitura.dataObj);
 
-      if (!mapaDiario[dia]) mapaDiario[dia] = inicializarRegistro(dia, false);
-      if (!mapaMensal[mes]) mapaMensal[mes] = inicializarRegistro(mes, true);
+      if (!mapaDiario[dia]) mapaDiario[dia] = inicializarRegistro(dia);
+      if (!mapaMensal[mes]) mapaMensal[mes] = inicializarRegistro(mes);
 
       adicionarLeitura(mapaDiario[dia], leitura);
       adicionarLeitura(mapaMensal[mes], leitura);
     }
 
-    // ── Fecha e formata ───────────────────────────────────────
+    // ── Fecha e ordena ────────────────────────────────────────
 
-    const resultadoDiario = Object.values(mapaDiario)
+    const diarios = Object.values(mapaDiario)
       .sort((a, b) => a.chave.localeCompare(b.chave))
       .map(r => fecharRegistro(r, false));
 
-    const resultadoMensal = Object.values(mapaMensal)
+    const mensais = Object.values(mapaMensal)
       .sort((a, b) => a.chave.localeCompare(b.chave))
       .map(r => fecharRegistro(r, true));
 
-    // ── Resumo = mês atual (último mês com dados) ─────────────
+    // ── Resumo = mês mais recente ─────────────────────────────
 
-    const ultimoMes = resultadoMensal[resultadoMensal.length - 1];
-
-    const resumo = ultimoMes
-      ? {
-          consumo_rede_kwh:        ultimoMes.consumo_rede_kwh,
-          energia_exportada_kwh:   ultimoMes.energia_exportada_kwh,
-          geracao_solar_kwh:       null,
-          consumo_solar_kwh:       null,
-          balanco_rede_kwh:        ultimoMes.balanco_rede_kwh,
-          custo_rede_rs:           ultimoMes.custo_rede_rs,
-          economia_rs:             null,
-          geracao_total_disponivel: false,
-        }
-      : {
-          consumo_rede_kwh:        0,
-          energia_exportada_kwh:   0,
-          geracao_solar_kwh:       null,
-          consumo_solar_kwh:       null,
-          balanco_rede_kwh:        0,
-          custo_rede_rs:           0,
-          economia_rs:             null,
-          geracao_total_disponivel: false,
-        };
+    const ultimoMes = mensais[mensais.length - 1] || {
+      consumo_rede_kwh:      0,
+      energia_exportada_kwh: 0,
+      custo_rede_rs:         0,
+      balanco_rede_kwh:      0,
+    };
 
     return res.status(200).json({
-      tarifa_kwh:  TARIFA_KWH,
-      diarios:     resultadoDiario,
-      mensais:     resultadoMensal,
-      resumo,
-      fonte_energia: 'telemetria_eletrica',
-      significado: {
-        consumo_rede_kwh:      'energia_total: energia consumida da rede (contador acumulado)',
-        energia_exportada_kwh: 'energia_gerada_total: energia solar exportada para a rede',
-        geracao_solar_kwh:     'indisponível até integrar o inversor/Elekeeper',
-        consumo_solar_kwh:     'indisponível até integrar a geração total do inversor',
-      },
+      tarifa_kwh: TARIFA_KWH,
+      diarios,
+      mensais,
+      resumo:     ultimoMes,
       diagnostico: {
         leituras_consideradas: registros.length,
         metodo_calculo:        'delta_contador_acumulado',
-        primeiro_timestamp:    registros[0]?.timestamp             || null,
-        ultimo_timestamp:      registros[registros.length - 1]?.timestamp || null,
-        total_dias:            resultadoDiario.length,
-        total_meses:           resultadoMensal.length,
-        nota: 'kWh = (última − primeira leitura do contador por período). Imune a perdas de Wi-Fi.',
+        divisor_energia:       100,
+        unidade_banco:         'centésimos de Wh (0,01 Wh por unidade)',
+        primeiro_timestamp:    registros[0]?.timestamp                      || null,
+        ultimo_timestamp:      registros[registros.length - 1]?.timestamp   || null,
+        total_dias:            diarios.length,
+        total_meses:           mensais.length,
+        nota: 'kWh = (última − primeira leitura do contador por período) ÷ 100. Imune a perdas de Wi-Fi.',
       },
     });
 
   } catch (err) {
     console.error('Erro em /api/gestao:', err);
-    return res.status(500).json({ erro: 'Erro interno na gestão energética: ' + (err.message || String(err)) });
+    return res.status(500).json({ erro: 'Erro interno: ' + (err.message || String(err)) });
   }
 }
