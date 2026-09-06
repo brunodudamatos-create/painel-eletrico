@@ -3,52 +3,83 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gestão Energética - Painel Executivo</title>
+<title>📊 Gestão Energética — Brasileira Distribuidora</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#0d1117;color:#e6edf3;font-family:Segoe UI,Arial,sans-serif}
-header{background:#161b22;border-bottom:1px solid #30363d;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
-h1{margin:0;color:#58a6ff;font-size:1.25rem}
-.controls{display:flex;align-items:center;gap:10px}
-select,.btn{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:7px;padding:9px 13px;text-decoration:none}
-main{max-width:1400px;margin:auto;padding:22px 28px}
-.section-title{font-size:1rem;color:#8b949e;margin:8px 0 15px;border-bottom:1px solid #30363d;padding-bottom:8px;text-transform:uppercase}
-.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:24px}
-.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:15px;margin-bottom:24px}
-.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;min-width:0}
-.label{color:#8b949e;font-size:.72rem;text-transform:uppercase;font-weight:700}
-.value{font-size:1.65rem;font-weight:700;margin-top:9px}
-.green{color:#3fb950}.red{color:#f85149}.blue{color:#58a6ff}.muted{color:#8b949e;font-size:1rem}
-.status{font-size:.72rem;color:#8b949e;margin-top:4px}
-.chart-card{height:370px}.chart-wrap{height:305px;position:relative}
-.notice{background:#1c2128;border:1px solid #30363d;border-left:4px solid #d29922;border-radius:9px;padding:13px 16px;margin-bottom:24px;color:#c9d1d9;font-size:.82rem}
-@media(max-width:1000px){.grid4{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:650px){header{padding:15px}.grid4,.grid2{grid-template-columns:1fr}main{padding:15px}.chart-card{height:330px}.chart-wrap{height:270px}}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+
+  /* ── Navbar unificada ───────────────────────────────────── */
+  .navbar{background:#161b22;border-bottom:1px solid #30363d;padding:0 24px;display:flex;align-items:center;gap:16px;height:58px;flex-shrink:0}
+  .navbar-brand{display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0}
+  .navbar-brand img{height:34px}
+  .navbar-brand span{font-size:.95rem;font-weight:700;color:#e6edf3;white-space:nowrap}
+  .navbar-sep{width:1px;height:28px;background:#30363d;flex-shrink:0}
+  .navbar-nav{display:flex;align-items:center;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .navbar-nav::-webkit-scrollbar{display:none}
+  .nav-btn{display:flex;align-items:center;gap:7px;padding:0 16px;height:36px;border-radius:8px;font-size:.8rem;font-weight:600;white-space:nowrap;text-decoration:none;border:1px solid transparent;transition:all .2s;flex-shrink:0}
+  .nav-btn:not(.active){background:#21262d;color:#8b949e;border-color:#30363d}
+  .nav-btn:not(.active):hover{background:#30363d;color:#e6edf3;border-color:#484f58}
+  .nav-btn.active{background:#1a3a6e;color:#58a6ff;border-color:#1f6feb;cursor:default;pointer-events:none}
+  .nav-btn .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+  .navbar-right{margin-left:auto}
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  main{max-width:1400px;margin:auto;padding:22px 28px}
+  .section-title{font-size:.75rem;color:#8b949e;margin:8px 0 15px;border-bottom:1px solid #30363d;padding-bottom:8px;text-transform:uppercase;letter-spacing:1px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:24px}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:15px;margin-bottom:24px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;min-width:0}
+  .label{color:#8b949e;font-size:.72rem;text-transform:uppercase;font-weight:700;letter-spacing:.5px}
+  .value{font-size:1.65rem;font-weight:700;margin-top:9px}
+  .green{color:#3fb950}.red{color:#f85149}.blue{color:#58a6ff}
+  .status-txt{font-size:.72rem;color:#8b949e;margin-top:4px}
+  .chart-card{height:370px}
+  .chart-wrap{height:305px;position:relative}
+  .notice{background:#1c2128;border:1px solid #30363d;border-left:4px solid #d29922;border-radius:9px;padding:13px 16px;margin-bottom:24px;color:#c9d1d9;font-size:.82rem}
+
+  @media(max-width:1000px){.grid4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:650px){.grid4,.grid2{grid-template-columns:1fr}main{padding:15px}.chart-card{height:330px}.chart-wrap{height:270px}.navbar{padding:0 12px;gap:10px}.navbar-brand span{display:none}}
 </style>
 </head>
 <body>
 
-<header>
-  <h1>📊 Gestão Energética</h1>
-  <div class="controls">
-    <span style="color:#8b949e;font-size:.8rem">MÊS:</span>
-    <select id="seletorMes"></select>
-    <a class="btn" href="index.html">⬅ Voltar</a>
+<!-- ── Navbar unificada ─────────────────────────────────────── -->
+<nav class="navbar">
+  <a class="navbar-brand" href="index.html">
+    <img src="logo.png" alt="Logo">
+    <span>Brasileira Distribuidora</span>
+  </a>
+  <div class="navbar-sep"></div>
+  <div class="navbar-nav">
+    <a class="nav-btn" href="index.html">
+      ⚡ Painel Elétrico
+    </a>
+    <a class="nav-btn active" href="gestao.html">
+      <span class="dot"></span>📊 Gestão Energética
+    </a>
+    <a class="nav-btn" href="camaras.html">
+      ❄️ Câmaras Frias
+    </a>
   </div>
-</header>
+  <div class="navbar-right">
+    <span style="color:#8b949e;font-size:.8rem" id="status-api">Carregando...</span>
+  </div>
+</nav>
 
 <main>
-  <div id="status-api" style="color:#8b949e;font-size:.8rem;margin-bottom:14px">Carregando...</div>
   <h2 id="titulo-mes" class="section-title">GESTÃO ENERGÉTICA</h2>
 
   <div class="notice">
     <b>Base atual:</b> medidor elétrico Tuya. O sistema já mostra corretamente o que está disponível
     no medidor: consumo da rede e energia solar exportada. A geração solar total do inversor e o
     consumo solar serão integrados depois via Elekeeper.
+    <span style="float:right;color:#8b949e">
+      MÊS: <select id="seletorMes" style="background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:3px 8px;margin-left:4px"></select>
+    </span>
   </div>
 
-  <!-- CARDS PRINCIPAIS -->
+  <!-- Cards principais -->
   <div class="grid4">
     <div class="card">
       <div class="label">Consumo da rede</div>
@@ -61,32 +92,31 @@ main{max-width:1400px;margin:auto;padding:22px 28px}
     <div class="card">
       <div class="label">Geração solar total</div>
       <div id="mes-geracao-total" class="value blue">AGUARDANDO</div>
-      <div class="status">Inversor / Elekeeper</div>
+      <div class="status-txt">Inversor / Elekeeper</div>
     </div>
     <div class="card">
       <div class="label">Consumo solar</div>
       <div id="mes-consumo-solar" class="value blue">AGUARDANDO</div>
-      <div class="status">Geração total − exportação</div>
+      <div class="status-txt">Geração total − exportação</div>
     </div>
   </div>
 
-  <!-- INDICADORES DA REDE -->
   <h2 class="section-title">INDICADORES DA REDE</h2>
   <div class="grid4">
     <div class="card">
       <div class="label">Custo estimado da energia da rede</div>
-      <div id="mes-custo-rede" class="value red">— </div>
-      <div class="status">Tarifa: R$ 0,899/kWh</div>
+      <div id="mes-custo-rede" class="value red">—</div>
+      <div class="status-txt">Tarifa: R$ 0,899/kWh</div>
     </div>
     <div class="card">
       <div class="label">Balanço da rede</div>
       <div id="mes-balanco-rede" class="value blue">— kWh</div>
-      <div class="status">Exportação − consumo da rede</div>
+      <div class="status-txt">Exportação − consumo da rede</div>
     </div>
     <div class="card">
       <div class="label">Economia solar</div>
       <div id="mes-economia" class="value blue">AGUARDANDO</div>
-      <div class="status">Depende da geração total</div>
+      <div class="status-txt">Depende da geração total</div>
     </div>
     <div class="card">
       <div class="label">Exportação — última leitura do dia</div>
@@ -94,7 +124,6 @@ main{max-width:1400px;margin:auto;padding:22px 28px}
     </div>
   </div>
 
-  <!-- ÚLTIMOS 7 DIAS -->
   <h2 class="section-title">ÚLTIMOS 7 DIAS</h2>
   <div class="grid2">
     <div class="card">
@@ -107,7 +136,6 @@ main{max-width:1400px;margin:auto;padding:22px 28px}
     </div>
   </div>
 
-  <!-- ACOMPANHAMENTO DIÁRIO -->
   <h2 class="section-title">ACOMPANHAMENTO DIÁRIO</h2>
   <div class="grid2">
     <div class="card chart-card">
@@ -120,7 +148,6 @@ main{max-width:1400px;margin:auto;padding:22px 28px}
     </div>
   </div>
 
-  <!-- HISTÓRICO MENSAL -->
   <h2 class="section-title">HISTÓRICO MENSAL</h2>
   <div class="card chart-card">
     <div class="label" style="margin-bottom:12px">Consumo da rede × Solar exportada por mês</div>
