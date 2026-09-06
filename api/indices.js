@@ -1,19 +1,21 @@
 // =============================================================
-// api/indices.js  v1.0  —  Índices mensais do painel
+// api/indices.js  —  Índices Mensais do Painel
+// Versão 1.0  —  06/09/2026
 // =============================================================
-// Endpoint leve que retorna em uma única chamada:
-//
-//   excedencias_45      — quantas vezes temp >= 45°C no mês
-//   faltas_energia      — quantas faltas detectadas no mês
-//   primeiro_do_dia     — primeiro registro de hoje (para delta energia/dia)
-//   primeiro_do_mes     — primeiro registro do mês (para delta energia/mês)
-//
-// Usa queries COUNT e LIMIT 1 no Supabase — muito mais eficiente
-// do que trazer todos os registros e filtrar no frontend.
-//
-// FUSO: America/Cuiabá = UTC-4 (sem horário de verão)
+// HISTÓRICO DE ALTERAÇÕES:
+//   v1.0 (06/09/2026)
+//     - Endpoint novo: retorna todos os índices em uma chamada
+//     - excedencias_45: COUNT de leituras com temp_atual >= 45°C
+//       no mês atual (query leve, sem trazer registros)
+//     - faltas_energia: COUNT de eventos_sistema WHERE
+//       tipo='FALTA_ENERGIA' no mês atual
+//     - primeiro_do_dia: primeiro registro de hoje (ASC LIMIT 1)
+//       para calcular delta de energia por fase do dia
+//     - primeiro_do_mes: primeiro registro do mês (ASC LIMIT 1)
+//       para calcular delta de energia por fase do mês
+//     - Fuso horário: America/Cuiabá = UTC-4 fixo (sem DST)
+//     - Todas as queries em paralelo via Promise.all
 // =============================================================
-
 import { createClient } from '@supabase/supabase-js';
 
 const TIMEZONE_OFFSET_H = -4; // Cuiabá é UTC-4 fixo
