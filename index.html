@@ -1,19 +1,10 @@
 <!--
 =================================================================
   index.html  —  Painel Elétrico Principal
-  Versão 4.6  —  06/09/2026
+  Versão 4.7  —  06/09/2026
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
-    v4.6 (06/09/2026)
-      - "Totais do Sistema" renomeado para "Indicadores do Painel"
-        (tecnicamente mais preciso: mistura de medições instantâneas
-        e acumuladas, não apenas somatórios)
-      - Unidades duplicadas removidas de Potência Total e Energia do Mês
-        (a unidade já está embutida no valor via setVal())
-      - Potência Total: indicador de modo dinâmico abaixo do valor
-        "(consumindo da rede)" em vermelho quando positiva
-        "(injetando na rede)" em verde quando negativa
-        "(neutro)" em cinza quando zero
+    v4.7 (
     v4.5 (06/09/2026)
       - Energia por fase: substituída por aplicarEnergiaPorFase()
         com primeirodoMesCache — sem loop, sem condição de corrida
@@ -168,7 +159,13 @@
   .mu{font-size:.7rem;color:#8b949e;margin-left:2px}
 
   /* ── Gráficos ───────────────────────────────────────────── */
-  .chart-container{height:260px;margin-bottom:25px;background:#161b22;padding:12px;border-radius:10px;border:1px solid #30363d}
+  .chart-container{height:260px;margin-bottom:25px;background:#161b22;padding:12px;border-radius:10px;border:1px solid #30363d;position:relative}
+  .chart-stats{position:absolute;top:14px;right:14px;display:flex;gap:12px;z-index:10;pointer-events:none}
+  .chart-stat{background:rgba(13,17,23,.75);border:1px solid #30363d;border-radius:6px;padding:3px 8px;font-size:.65rem;color:#8b949e;white-space:nowrap;backdrop-filter:blur(4px)}
+  .chart-stat span{font-weight:700;font-size:.72rem}
+  .chart-stat.stat-min span{color:#58a6ff}
+  .chart-stat.stat-med span{color:#8b949e}
+  .chart-stat.stat-max span{color:#f85149}
 
   /* ── Footer ─────────────────────────────────────────────── */
   footer{text-align:center;font-size:.72rem;color:#484f58;padding:14px}
@@ -324,20 +321,21 @@
   </div>
 
   <!-- ── Totais do Sistema (topo) ─────────────────────────── -->
-  <div class="stitle">⚡ Indicadores do Painel</div>
+  <div class="stitle">⚡ Indicadores Elétricos — Ponto de Medição (Após Padrão de Entrada)</div>
   <div class="totais">
     <div class="tc">
       <div class="tico">⚡</div>
       <div class="tnome">Potência Total</div>
       <div class="tnome-sub">(demanda instantânea)</div>
       <div class="tval" id="ptotal">--</div>
-      <div id="ptotal-modo" style="font-size:.72rem;margin-top:4px;font-weight:600;color:#8b949e">--</div>
+      <div class="tunit">W</div>
     </div>
     <div class="tc">
       <div class="tico">🔋</div>
       <div class="tnome">Energia do Mês</div>
       <div class="tnome-sub">(consumo da rede)</div>
       <div class="tval" id="etotal">--</div>
+      <div class="tunit">kWh</div>
     </div>
     <div class="tc">
       <div class="tico">⚡</div>
@@ -393,7 +391,14 @@
       <button class="c-btn active" onclick="mudarPeriodo('temp',432,this)">36h</button>
     </div>
   </div>
-  <div class="chart-container"><canvas id="tempChart"></canvas></div>
+  <div class="chart-container">
+    <div class="chart-stats" id="stats-temp">
+      <div class="chart-stat stat-min">MÍN <span id="stat-temp-min">--</span>°C</div>
+      <div class="chart-stat stat-med">MÉD <span id="stat-temp-med">--</span>°C</div>
+      <div class="chart-stat stat-max">MÁX <span id="stat-temp-max">--</span>°C</div>
+    </div>
+    <canvas id="tempChart"></canvas>
+  </div>
 
   <div class="stitle">
     <div class="stitle-left">📈 Tendência de Tensões (Volts)</div>
@@ -403,7 +408,14 @@
       <button class="c-btn active" onclick="mudarPeriodo('tensao',432,this)">36h</button>
     </div>
   </div>
-  <div class="chart-container"><canvas id="tensaoChart"></canvas></div>
+  <div class="chart-container">
+    <div class="chart-stats" id="stats-tensao">
+      <div class="chart-stat stat-min">MÍN <span id="stat-tensao-min">--</span>V</div>
+      <div class="chart-stat stat-med">MÉD <span id="stat-tensao-med">--</span>V</div>
+      <div class="chart-stat stat-max">MÁX <span id="stat-tensao-max">--</span>V</div>
+    </div>
+    <canvas id="tensaoChart"></canvas>
+  </div>
 
   <div class="stitle">
     <div class="stitle-left">📈 Tendência de Correntes (Amperes)</div>
@@ -413,7 +425,31 @@
       <button class="c-btn active" onclick="mudarPeriodo('corrente',432,this)">36h</button>
     </div>
   </div>
-  <div class="chart-container"><canvas id="correnteChart"></canvas></div>
+  <div class="chart-container">
+    <div class="chart-stats" id="stats-corrente">
+      <div class="chart-stat stat-min">MÍN <span id="stat-corrente-min">--</span>A</div>
+      <div class="chart-stat stat-med">MÉD <span id="stat-corrente-med">--</span>A</div>
+      <div class="chart-stat stat-max">MÁX <span id="stat-corrente-max">--</span>A</div>
+    </div>
+    <canvas id="correnteChart"></canvas>
+  </div>
+
+  <div class="stitle">
+    <div class="stitle-left">📈 Tendência de Potência por Fase (W)</div>
+    <div class="chart-btns">
+      <button class="c-btn" onclick="mudarPeriodo('potencia',144,this)">12h</button>
+      <button class="c-btn" onclick="mudarPeriodo('potencia',288,this)">24h</button>
+      <button class="c-btn active" onclick="mudarPeriodo('potencia',432,this)">36h</button>
+    </div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-stats" id="stats-potencia">
+      <div class="chart-stat stat-min">MÍN <span id="stat-potencia-min">--</span>W</div>
+      <div class="chart-stat stat-med">MÉD <span id="stat-potencia-med">--</span>W</div>
+      <div class="chart-stat stat-max">MÁX <span id="stat-potencia-max">--</span>W</div>
+    </div>
+    <canvas id="potenciaChart"></canvas>
+  </div>
 
 </main>
 <footer>Atualização a cada 5 min &nbsp;|&nbsp; Dep. Engenharia &nbsp;|&nbsp; Brasileira Distribuidora de Frutas</footer>
@@ -429,7 +465,7 @@ const API_GESTAO   = `${BASE}/api/gestao`;
 const API_INDICES  = `${BASE}/api/indices`;
 
 let historico = [];
-let limites   = { temp: 432, tensao: 432, corrente: 432 };
+let limites   = { temp: 432, tensao: 432, corrente: 432, potencia: 432 };
 
 // Valores atuais das fases (do último render) para calcular delta
 let energiaAtual = { a: null, b: null, c: null };
@@ -481,6 +517,18 @@ const chartCorrente = new Chart(
   }
 );
 
+const chartPotencia = new Chart(
+  document.getElementById('potenciaChart').getContext('2d'), {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Fase A (W)', data: [], borderColor: '#58a6ff', tension: 0.3 },
+      { label: 'Fase B (W)', data: [], borderColor: '#3fb950', tension: 0.3 },
+      { label: 'Fase C (W)', data: [], borderColor: '#f0883e', tension: 0.3 }
+    ]},
+    options: optsBase
+  }
+);
+
 // ── Utilitários ──────────────────────────────────────────────
 
 function mudarPeriodo(tipo, qtd, btn) {
@@ -490,27 +538,70 @@ function mudarPeriodo(tipo, qtd, btn) {
   renderizarGraficos();
 }
 
+// ── Helpers para stats min/med/max ──────────────────────────
+function calcStats(valores) {
+  const v = valores.filter(x => x !== null && x !== undefined && !isNaN(Number(x))).map(Number);
+  if (!v.length) return { min: null, med: null, max: null };
+  const min = Math.min(...v);
+  const max = Math.max(...v);
+  const med = v.reduce((a, b) => a + b, 0) / v.length;
+  return { min, med, max };
+}
+
+function atualizarStats(prefixo, valores, casas) {
+  const s = calcStats(valores);
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val !== null ? val.toFixed(casas) : '--';
+  };
+  setText('stat-' + prefixo + '-min', s.min);
+  setText('stat-' + prefixo + '-med', s.med);
+  setText('stat-' + prefixo + '-max', s.max);
+}
+
 function renderizarGraficos() {
   if (!historico.length) return;
 
+  // ── Temperatura ──────────────────────────────────────────
   const t = historico.slice(-limites.temp);
   chartTemp.data.labels            = t.map(p => p.hora);
   chartTemp.data.datasets[0].data  = t.map(p => p.temp);
   chartTemp.update();
+  atualizarStats('temp', t.map(p => p.temp), 1);
 
+  // ── Tensões ──────────────────────────────────────────────
   const v = historico.slice(-limites.tensao);
   chartTensao.data.labels            = v.map(p => p.hora);
   chartTensao.data.datasets[0].data  = v.map(p => p.va);
   chartTensao.data.datasets[1].data  = v.map(p => p.vb);
   chartTensao.data.datasets[2].data  = v.map(p => p.vc);
   chartTensao.update();
+  // Stats das tensões: todas as fases juntas
+  atualizarStats('tensao', [
+    ...v.map(p => p.va), ...v.map(p => p.vb), ...v.map(p => p.vc)
+  ], 1);
 
+  // ── Correntes ────────────────────────────────────────────
   const c = historico.slice(-limites.corrente);
   chartCorrente.data.labels            = c.map(p => p.hora);
   chartCorrente.data.datasets[0].data  = c.map(p => p.ia);
   chartCorrente.data.datasets[1].data  = c.map(p => p.ib);
   chartCorrente.data.datasets[2].data  = c.map(p => p.ic);
   chartCorrente.update();
+  atualizarStats('corrente', [
+    ...c.map(p => p.ia), ...c.map(p => p.ib), ...c.map(p => p.ic)
+  ], 1);
+
+  // ── Potência por Fase ────────────────────────────────────
+  const pot = historico.slice(-limites.potencia);
+  chartPotencia.data.labels            = pot.map(p => p.hora);
+  chartPotencia.data.datasets[0].data  = pot.map(p => p.pa);
+  chartPotencia.data.datasets[1].data  = pot.map(p => p.pb);
+  chartPotencia.data.datasets[2].data  = pot.map(p => p.pc);
+  chartPotencia.update();
+  atualizarStats('potencia', [
+    ...pot.map(p => p.pa), ...pot.map(p => p.pb), ...pot.map(p => p.pc)
+  ], 0);
 }
 
 // Formata número com separador de milhar pt-BR
@@ -575,24 +666,6 @@ function render(d) {
     setHTML('fpc', `${fmt(el.fat_pot_c, 2)}`);
 
     setVal('ptotal', el.potencia_total, 0, 'W');
-
-    // Modo da potência: consumindo ou injetando na rede
-    const modoEl = document.getElementById('ptotal-modo');
-    if (modoEl) {
-      const pt = parseFloat(el.potencia_total);
-      if (!isNaN(pt)) {
-        if (pt < 0) {
-          modoEl.textContent = '(injetando na rede)';
-          modoEl.style.color = '#3fb950';
-        } else if (pt > 0) {
-          modoEl.textContent = '(consumindo da rede)';
-          modoEl.style.color = '#f85149';
-        } else {
-          modoEl.textContent = '(neutro)';
-          modoEl.style.color = '#8b949e';
-        }
-      }
-    }
 
     // Guarda valores brutos de energia e recalcula delta por fase
     energiaAtual.a = el.energia_a !== null ? Number(el.energia_a) : null;
@@ -727,7 +800,8 @@ async function carregarHistorico() {
         }),
       temp: item.temp_atual ? parseFloat(item.temp_atual) : null,
       va: item.tensao_a,   vb: item.tensao_b,   vc: item.tensao_c,
-      ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c
+      ia: item.corrente_a, ib: item.corrente_b, ic: item.corrente_c,
+      pa: item.potencia_a, pb: item.potencia_b, pc: item.potencia_c
     }));
     renderizarGraficos();
   } catch (e) { console.error('Erro histórico:', e); }
