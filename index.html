@@ -1,9 +1,13 @@
 <!--
 =================================================================
   index.html  —  Painel Elétrico Principal
-  Versão 4.1  —  06/09/2026
+  Versão 4.2  —  06/09/2026
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
+    v4.2 (06/09/2026)
+      - "Banco: Gravação Sucesso" relocado do termômetro para a
+        navbar, ao lado do timestamp — aparece como "✓ Banco OK"
+        em verde ou mensagem de erro em vermelho
     v4.1 (06/09/2026)
       - Termômetro SVG vertical substituiu o gauge horizontal
         (tubo, bolbo, gradiente verde→amarelo→vermelho, linha de
@@ -166,6 +170,7 @@
   </div>
   <div class="navbar-right">
     <span class="ts" id="ts">A conectar...</span>
+    <span id="fmodo" style="font-size:.7rem;color:#484f58;white-space:nowrap">--</span>
     <div class="badge" id="badge">🟢 NORMAL</div>
   </div>
 </nav>
@@ -267,10 +272,9 @@
         </svg>
       </div>
 
-      <!-- Status + banco -->
+      <!-- Status alarme -->
       <div class="ginfo">
         <span>Alarme 45°C: <span id="alarme" style="color:#3fb950;font-weight:700">● Inativo</span></span>
-        <span>Banco: <span id="fmodo">--</span></span>
       </div>
     </div>
 
@@ -651,7 +655,13 @@ function render(d) {
     }
   }
 
-  setText('fmodo', d.banco_dados || '--');
+  // Banco: mostra status na navbar de forma compacta
+  const bancoEl = document.getElementById('fmodo');
+  if (bancoEl) {
+    const ok = d.banco_dados && d.banco_dados.includes('Sucesso');
+    bancoEl.textContent = ok ? '✓ Banco OK' : (d.banco_dados || '--');
+    bancoEl.style.color = ok ? '#3fb950' : '#f85149';
+  }
 }
 
 // ── Histórico para gráficos ──────────────────────────────────
