@@ -346,21 +346,8 @@ export default async function handler(req, res) {
       alertas.push(`*Temperatura:* ${tempAtualNum.toFixed(1)}°C - Acima do limite de ${LIMITE_TEMP_ALARME}°C`);
     }
 
-    // 5c. Flatline — medidor congelado (queda de energia)
-    //     Verifica APÓS a gravação para incluir a leitura atual
-    const flatlineInfo = await verificarFlatline();
-    if (flatlineInfo.flatline) {
-      alertas.push(`*Queda de Energia:* sinais congelados nas últimas ${FLATLINE_LEITURAS} leituras consecutivas`);
-    }
-
-    // ── 6. NOTIFICAÇÃO TELEGRAM (sem spam) ───────────────────
-    //
-    // Envia apenas na transição de estado:
-    //   normal → alerta   (entra em alerta)
-    //   alerta → normal   (normalizado)
-
-    let deveEnviarTelegram = false;
-    let textoMensagem      = '';
+    // ── 5c. Busca estado anterior ANTES do flatline ──────────
+    // (necessário para anti-spam na gravação de eventos)
 
     const { data: estadoAnterior } = await supabase
       .from('status_alarmes')
@@ -370,6 +357,27 @@ export default async function handler(req, res) {
 
     const agora    = new Date();
     const agoraISO = agora.toISOString();
+
+    // 5d. Flatline — medidor congelado (queda de energia)
+    //     Verifica APÓS gravar a leitura atual e buscar o estado anterior
+    const flatlineInfo = await verificarFlatline();
+    if (flatlineInfo.flatline) {
+      alertas.push(`*Queda de Energia:* sinais congelados nas últimas ${FLATLINE_LEITURAS} leituras consecutivas`);
+
+      // Grava evento discreto apenas na transição normal → falta
+      // (evita 1 registro a cada 5 minutos durante uma falta prolongada)
+      if (!estadoAnterior?.em_alerta) {
+        try {
+          await supabase.from('eventos_sistema').insert([{
+            tipo:      'FALTA_ENERGIA',
+            device_id: 'painel_brasileira',
+            detalhes:  flatlineInfo,
+          }]);
+        } catch (evErr) {
+          console.error('Erro ao gravar evento falta de energia:', evErr);
+        }
+      }
+    }
 
     const novoEstado = {
       em_alerta:          alertas.length > 0,
@@ -436,16 +444,4 @@ export default async function handler(req, res) {
       banco_dados:  bancoStatus,
       diagnostico_tuya: {
         total_dps:             dpsDisponiveis.length,
-        energia_consumo_dp:    'forward_energy_total',
-        energia_geracao_dp:    energiaReversa.codigo,
-        energia_geracao_valor: energiaReversa.valor,
-        origem:                energiaReversa.origem,
-        dps_disponiveis:       dpsDisponiveis,
-      },
-    });
-
-  } catch (err) {
-    console.error('Erro /api/dados:', err);
-    return res.status(500).json({ erro: err.message });
-  }
-}
+        energia_consumo_dp:    'for
