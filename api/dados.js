@@ -1,8 +1,12 @@
 // =============================================================
 // api/dados.js  —  Coleta Tuya + Alarmes + Supabase
-// Versão 3.4  —  06/09/2026
+// Versão 3.5  —  06/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v3.5 (06/09/2026)
+//     - Limite de tensão alta ajustado de 139V para 141V
+//       Razão: picos de 139-140V observados após 16h sem geração solar
+//       ainda dentro do comportamento normal da rede concessionária
 //   v3.4 (06/09/2026)
 //     - verificarFlatline: confirmação dupla com termostato
 //       Se medidor congelado + termostato offline → falta de energia
@@ -36,9 +40,10 @@ import { createClient } from '@supabase/supabase-js';
 
 // ── Constantes ────────────────────────────────────────────────
 
-const LIMITE_TENSAO_MAX_CONSUMINDO = 139;  // V — alarme SEM geração solar
-//   Base: consumindo sem geração, P95 = 137V, máx histórico = 139.6V
-//   Acima de 139V sem geração = problema real da concessionária
+const LIMITE_TENSAO_MAX_CONSUMINDO = 141;  // V — alarme SEM geração solar
+//   Ajustado de 139 para 141: picos de 139-140V observados após 16h
+//   sem geração solar ainda dentro do comportamento normal da rede
+//   Acima de 141V sem geração = anomalia real da concessionária
 const LIMITE_TENSAO_MAX_EXPORTANDO = 999;  // V — nunca alarma tensão alta exportando
 //   Tensão alta exportando = inversor operando normalmente (até 143V visto)
 //   Sem ação possível sem impacto financeiro — silenciado completamente
@@ -375,14 +380,14 @@ export default async function handler(req, res) {
     //      ativo mesmo que potencia_total >= 0 (consumo absorve geração)
     //
     // Alarme SOMENTE se todos os critérios abaixo forem verdadeiros:
-    //   • tensao > 139V  (anomalia real — base: P95 consumindo = 137V)
+    //   • tensao > 141V  (anomalia real — ajustado após observação de picos 139-140V pós 16h)
     //   • potencia_total >= 0 (não está exportando)
     //   • hora fora de 06h–16h (inversor certamente inativo)
     //
     // Mensagem já instrui a ação: abrir chamado na concessionária.
     //
     // Análise de base (30 dias de dados reais):
-    //   Consumindo P95 = 137V, máx = 139.6V (raro)
+    //   Consumindo P95 = 137V, máx observado = 140V pós 16h (sem geração)
     //   Exportando P95 = 141.3V, máx = 143.3V (normal)
     //   Inflexão consumindo→exportando ocorre em 137–138V
 
