@@ -1,9 +1,19 @@
 <!--
 =================================================================
   index.html  —  Painel Elétrico Principal
-  Versão 4.5  —  06/09/2026
+  Versão 4.6  —  06/09/2026
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
+    v4.6 (06/09/2026)
+      - "Totais do Sistema" renomeado para "Indicadores do Painel"
+        (tecnicamente mais preciso: mistura de medições instantâneas
+        e acumuladas, não apenas somatórios)
+      - Unidades duplicadas removidas de Potência Total e Energia do Mês
+        (a unidade já está embutida no valor via setVal())
+      - Potência Total: indicador de modo dinâmico abaixo do valor
+        "(consumindo da rede)" em vermelho quando positiva
+        "(injetando na rede)" em verde quando negativa
+        "(neutro)" em cinza quando zero
     v4.5 (06/09/2026)
       - Energia por fase: substituída por aplicarEnergiaPorFase()
         com primeirodoMesCache — sem loop, sem condição de corrida
@@ -314,21 +324,20 @@
   </div>
 
   <!-- ── Totais do Sistema (topo) ─────────────────────────── -->
-  <div class="stitle">📊 Totais do Sistema</div>
+  <div class="stitle">⚡ Indicadores do Painel</div>
   <div class="totais">
     <div class="tc">
       <div class="tico">⚡</div>
       <div class="tnome">Potência Total</div>
       <div class="tnome-sub">(demanda instantânea)</div>
       <div class="tval" id="ptotal">--</div>
-      <div class="tunit">W</div>
+      <div id="ptotal-modo" style="font-size:.72rem;margin-top:4px;font-weight:600;color:#8b949e">--</div>
     </div>
     <div class="tc">
       <div class="tico">🔋</div>
       <div class="tnome">Energia do Mês</div>
       <div class="tnome-sub">(consumo da rede)</div>
       <div class="tval" id="etotal">--</div>
-      <div class="tunit">kWh</div>
     </div>
     <div class="tc">
       <div class="tico">⚡</div>
@@ -566,6 +575,24 @@ function render(d) {
     setHTML('fpc', `${fmt(el.fat_pot_c, 2)}`);
 
     setVal('ptotal', el.potencia_total, 0, 'W');
+
+    // Modo da potência: consumindo ou injetando na rede
+    const modoEl = document.getElementById('ptotal-modo');
+    if (modoEl) {
+      const pt = parseFloat(el.potencia_total);
+      if (!isNaN(pt)) {
+        if (pt < 0) {
+          modoEl.textContent = '(injetando na rede)';
+          modoEl.style.color = '#3fb950';
+        } else if (pt > 0) {
+          modoEl.textContent = '(consumindo da rede)';
+          modoEl.style.color = '#f85149';
+        } else {
+          modoEl.textContent = '(neutro)';
+          modoEl.style.color = '#8b949e';
+        }
+      }
+    }
 
     // Guarda valores brutos de energia e recalcula delta por fase
     energiaAtual.a = el.energia_a !== null ? Number(el.energia_a) : null;
