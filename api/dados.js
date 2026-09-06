@@ -1,8 +1,15 @@
 // =============================================================
 // api/dados.js  —  Coleta Tuya + Alarmes + Supabase
-// Versão 3.3  —  06/09/2026
+// Versão 3.4  —  06/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v3.4 (06/09/2026)
+//     - verificarFlatline: confirmação dupla com termostato
+//       Se medidor congelado + termostato offline → falta de energia
+//       Se só medidor congelado → problema no medidor (não alarma)
+//       temp_atual do termostato passado como parâmetro para evitar
+//       chamada extra ao banco
+//     - Mensagem de falta de energia mais descritiva e acionável
 //   v3.3 (06/09/2026)
 //     - Alarme de tensão alta: lógica contextual baseada em análise
 //       estatística de 30 dias de dados reais do banco
@@ -139,7 +146,8 @@ function encontrarEnergiaReversa(props) {
 // Leituras insuficientes (< N): retorna flatline=false para
 // evitar falsos positivos nos primeiros registros do sistema.
 
-async function verificarFlatline() {
+async function verificarFlatline(tempAtualTermostato) {
+  // ── Passo 1: medidor elétrico — sinais congelados? ─────────
   const { data, error } = await supabase
     .from('telemetria_eletrica')
     .select('id, timestamp, tensao_a, corrente_a, potencia_total')
@@ -152,14 +160,14 @@ async function verificarFlatline() {
 
   const sinais = ['tensao_a', 'corrente_a', 'potencia_total'];
   const detalhes = {};
-  let todosTravados = true;
+  let medidorTravado = true;
 
   for (const sinal of sinais) {
     const valores = data.map(l => numero(l[sinal]));
 
     if (valores.some(v => v === null)) {
       detalhes[sinal] = { congelado: false, motivo: 'valores nulos' };
-      todosTravados = false;
+      medidorTravado = false;
       continue;
     }
 
@@ -167,13 +175,30 @@ async function verificarFlatline() {
     const todosIguais = valores.every(v => v === referencia);
     detalhes[sinal]   = { valor: referencia, congelado: todosIguais };
 
-    if (!todosIguais) todosTravados = false;
+    if (!todosIguais) medidorTravado = false;
   }
 
+  if (!medidorTravado) {
+    return { flatline: false, sinais: detalhes };
+  }
+
+  // ── Passo 2: confirmação dupla com termostato ───────────────
+  // Se o medidor elétrico está congelado E o termostato também
+  // não respondeu (temp_atual null), é falta de energia real.
+  // Se só o medidor travou mas o termostato OK → problema no medidor.
+  const termostatoCaiu = tempAtualTermostato === null ||
+                         tempAtualTermostato === undefined;
+
   return {
-    flatline:          todosTravados,
-    leituras_checadas: FLATLINE_LEITURAS,
-    sinais:            detalhes,
+    flatline:            termostatoCaiu,  // só confirma se os DOIS caíram
+    medidor_congelado:   true,
+    termostato_caiu:     termostatoCaiu,
+    confirmacao_dupla:   true,
+    leituras_checadas:   FLATLINE_LEITURAS,
+    sinais:              detalhes,
+    motivo: termostatoCaiu
+      ? 'Medidor congelado + termostato offline → falta de energia confirmada'
+      : 'Medidor congelado mas termostato OK → possível problema no medidor (não é falta de energia)',
   };
 }
 
@@ -406,9 +431,14 @@ export default async function handler(req, res) {
 
     // 5d. Flatline — medidor congelado (queda de energia)
     //     Verifica APÓS gravar a leitura atual e buscar o estado anterior
-    const flatlineInfo = await verificarFlatline();
+    // Passa temp_atual do termostato para confirmação dupla
+    const flatlineInfo = await verificarFlatline(temperatura.temp_atual);
     if (flatlineInfo.flatline) {
-      alertas.push(`*Queda de Energia:* sinais congelados nas últimas ${FLATLINE_LEITURAS} leituras consecutivas`);
+      alertas.push(
+        `*Falta de Energia Confirmada:* medidor elétrico congelado + ` +
+        `termostato offline nas últimas ${FLATLINE_LEITURAS} leituras.\n` +
+        `Verifique o quadro elétrico e registre a ocorrência.`
+      );
 
       // Grava evento discreto apenas na transição normal → falta
       // (evita 1 registro a cada 5 minutos durante uma falta prolongada)
