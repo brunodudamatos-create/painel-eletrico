@@ -80,15 +80,10 @@
   .tindice-sub{font-size:.65rem;color:#4a6a80;margin-top:2px}
 
   /* ── Termômetro ─────────────────────────────────────────── */
-  .gauge-wrap{display:flex;flex-direction:column;gap:4px;padding-top:4px}
-  .gtitle{font-size:.76rem;color:#8b949e;margin-bottom:6px;text-align:center;font-weight:600}
-  .termometro-area{display:flex;align-items:flex-end;gap:10px;justify-content:center;padding:4px 0 8px}
-  .term-svg-wrap{flex-shrink:0}
-  .term-escala{display:flex;flex-direction:column;justify-content:space-between;padding:4px 0}
-  .term-escala span{font-size:.65rem;color:#8b949e;line-height:1;white-space:nowrap}
-  .term-escala span.alarme{color:#f85149;font-weight:700}
-  .term-escala span.vent{color:#d29922;font-weight:700}
-  .ginfo{display:flex;justify-content:space-between;margin-top:6px;font-size:.72rem;color:#8b949e}
+  .gauge-wrap{display:flex;flex-direction:column;gap:8px;padding-top:4px}
+  .gtitle{font-size:.76rem;color:#8b949e;margin-bottom:4px;font-weight:600;text-align:center}
+  .term-svg-wrap{width:100%}
+  .ginfo{display:flex;justify-content:space-between;margin-top:4px;font-size:.72rem;color:#8b949e}
 
   /* ── Ventilador ─────────────────────────────────────────── */
   .fan-box{display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:4px}
@@ -194,72 +189,87 @@
       </div>
     </div>
 
-    <!-- Coluna central: termômetro SVG -->
+    <!-- Coluna central: termômetro SVG horizontal -->
     <div class="gauge-wrap">
-      <div class="gtitle">🌡️ Termômetro — Painel Elétrico</div>
-      <div class="termometro-area">
+      <div class="gtitle">🌡️ Termômetro do Painel Elétrico</div>
+      <div class="term-svg-wrap">
+        <!--
+          ViewBox: 320 × 100
+          Tubo horizontal: x=30..270 (largura=240), y=40..66 (altura=26)
+          Escala: 0°C → 60°C mapeado em 240px (4px/°C)
+          x = 30 + (temp/60)*240
+        -->
+        <svg id="term-svg" width="100%" viewBox="0 0 320 100"
+             xmlns="http://www.w3.org/2000/svg" style="display:block">
+          <defs>
+            <linearGradient id="termGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"   stop-color="#238636"/>
+              <stop offset="65%"  stop-color="#d29922"/>
+              <stop offset="100%" stop-color="#f85149"/>
+            </linearGradient>
+            <!-- clip: largura controlada pelo JS (0..240) -->
+            <clipPath id="termClip">
+              <rect id="termFillRect" x="30" y="38" width="0" height="30" rx="0"/>
+            </clipPath>
+          </defs>
 
-        <!-- Tubo SVG -->
-        <div class="term-svg-wrap">
-          <svg id="term-svg" width="52" height="200" viewBox="0 0 52 200" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="termGrad" x1="0" y1="1" x2="0" y2="0">
-                <stop offset="0%"   stop-color="#238636"/>
-                <stop offset="60%"  stop-color="#d29922"/>
-                <stop offset="100%" stop-color="#f85149"/>
-              </linearGradient>
-              <clipPath id="termClip">
-                <rect id="termFillRect" x="19" y="10" width="14" height="0" rx="4"/>
-              </clipPath>
-            </defs>
-            <!-- Tubo fundo -->
-            <rect x="19" y="10" width="14" height="148" rx="7" fill="#1a2535" stroke="#30363d" stroke-width="1.5"/>
-            <!-- Preenchimento com gradiente e clip animado -->
-            <rect x="19" y="10" width="14" height="148" rx="7" fill="url(#termGrad)" clip-path="url(#termClip)"/>
-            <!-- Reflexo -->
-            <rect x="22" y="13" width="3.5" height="142" rx="2" fill="white" opacity=".07"/>
-            <!-- Linha 45°C -->
-            <line id="tl45" x1="13" y1="80" x2="33" y2="80" stroke="#f85149" stroke-width="1.8" stroke-dasharray="4,2"/>
-            <text id="tt45" x="35" y="84" font-size="8" fill="#f85149" font-weight="bold" font-family="'Segoe UI',sans-serif">45°C</text>
-            <!-- Linha setpoint ventilador -->
-            <line id="tlvent" x1="13" y1="100" x2="33" y2="100" stroke="#d29922" stroke-width="1.5" stroke-dasharray="3,2"/>
-            <text id="ttvent" x="35" y="104" font-size="7.5" fill="#d29922" font-family="'Segoe UI',sans-serif" id="ttventlabel">--°C vent.</text>
-            <!-- Bolbo -->
-            <circle cx="26" cy="172" r="14" fill="#1a2535" stroke="#30363d" stroke-width="1.5"/>
-            <circle id="termBulb" cx="26" cy="172" r="11" fill="#238636"/>
-            <circle cx="22" cy="168" r="3" fill="white" opacity=".12"/>
-            <!-- Tick marks -->
-            <line x1="33" y1="10"  x2="37" y2="10"  stroke="#30363d" stroke-width="1"/>
-            <line x1="33" y1="47"  x2="36" y2="47"  stroke="#30363d" stroke-width="1"/>
-            <line x1="33" y1="84"  x2="36" y2="84"  stroke="#30363d" stroke-width="1"/>
-            <line x1="33" y1="121" x2="36" y2="121" stroke="#30363d" stroke-width="1"/>
-            <line x1="33" y1="158" x2="37" y2="158" stroke="#30363d" stroke-width="1"/>
-          </svg>
-        </div>
+          <!-- ── Marcas de escala (topo do tubo) ── -->
+          <!-- 0 -->
+          <line x1="30"  y1="34" x2="30"  y2="40" stroke="#484f58" stroke-width="1"/>
+          <text x="30"  y="30" text-anchor="middle" font-size="9" fill="#8b949e"
+                font-family="'Segoe UI',sans-serif">0°C</text>
+          <!-- 15 -->
+          <line x1="90"  y1="36" x2="90"  y2="40" stroke="#484f58" stroke-width="1"/>
+          <text x="90"  y="33" text-anchor="middle" font-size="8" fill="#484f58"
+                font-family="'Segoe UI',sans-serif">15°C</text>
+          <!-- 30 -->
+          <line x1="150" y1="36" x2="150" y2="40" stroke="#484f58" stroke-width="1"/>
+          <text x="150" y="33" text-anchor="middle" font-size="8" fill="#484f58"
+                font-family="'Segoe UI',sans-serif">30°C</text>
+          <!-- 45°C — alarme -->
+          <line id="tl45" x1="210" y1="28" x2="210" y2="70"
+                stroke="#f85149" stroke-width="2"/>
+          <text id="tt45" x="210" y="24" text-anchor="middle" font-size="9"
+                fill="#f85149" font-weight="bold"
+                font-family="'Segoe UI',sans-serif">45°C ⚠</text>
+          <!-- 60 -->
+          <line x1="270" y1="34" x2="270" y2="40" stroke="#f85149" stroke-width="1"/>
+          <text x="270" y="30" text-anchor="middle" font-size="9" fill="#f85149"
+                font-family="'Segoe UI',sans-serif">60°C</text>
 
-        <!-- Legenda -->
-        <div style="display:flex;flex-direction:column;gap:10px;font-size:.7rem;padding-bottom:30px;justify-content:center">
-          <div style="display:flex;align-items:center;gap:5px">
-            <div style="width:10px;height:2px;background:#f85149;border-radius:1px"></div>
-            <span style="color:#f85149;font-weight:700">45°C — Alarme</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:5px">
-            <div style="width:10px;height:2px;background:#d29922;border-radius:1px"></div>
-            <span style="color:#d29922;font-weight:700">Setpoint vent.</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:5px">
-            <div style="width:10px;height:10px;background:linear-gradient(#f85149,#238636);border-radius:2px"></div>
-            <span style="color:#8b949e">Faixa térmica</span>
-          </div>
-          <div style="margin-top:4px;padding:5px 8px;background:#0d1117;border-radius:6px;border:1px solid #30363d">
-            <div style="font-size:.65rem;color:#8b949e;margin-bottom:2px">ALARME 45°C</div>
-            <div id="alarme" style="color:#3fb950;font-weight:700;font-size:.78rem">● Inativo</div>
-          </div>
-        </div>
+          <!-- ── Setpoint ventilador (posição calculada pelo JS) ── -->
+          <line id="tlvent" x1="130" y1="30" x2="130" y2="70"
+                stroke="#d29922" stroke-width="1.5" stroke-dasharray="4,3" opacity=".85"/>
+          <text id="ttventlabel" x="130" y="82" text-anchor="middle" font-size="8"
+                fill="#d29922" font-family="'Segoe UI',sans-serif">--°C vent.</text>
 
+          <!-- ── Tubo ── -->
+          <!-- Trilho de fundo -->
+          <rect x="30" y="40" width="240" height="28" rx="14"
+                fill="#1a2535" stroke="#30363d" stroke-width="1.5"/>
+          <!-- Preenchimento com gradiente (clip pelo JS) -->
+          <rect x="30" y="40" width="240" height="28" rx="14"
+                fill="url(#termGrad)" clip-path="url(#termClip)"/>
+          <!-- Reflexo interno -->
+          <rect x="34" y="43" width="232" height="8" rx="4"
+                fill="white" opacity=".05"/>
+          <!-- Bolbo esquerdo -->
+          <circle cx="30" cy="54" r="17" fill="#1a2535" stroke="#30363d" stroke-width="1.5"/>
+          <circle id="termBulb" cx="30" cy="54" r="13" fill="#238636"/>
+          <circle cx="25" cy="49" r="4" fill="white" opacity=".12"/>
+
+          <!-- ── Ponteiro da temperatura atual ── -->
+          <!-- triângulo apontando para cima no tubo -->
+          <polygon id="termPointer" points="30,70 26,80 34,80" fill="#58a6ff" opacity=".9"/>
+          <text id="termPointerLabel" x="30" y="92" text-anchor="middle" font-size="9.5"
+                fill="#58a6ff" font-weight="bold"
+                font-family="'Segoe UI',sans-serif">--°C</text>
+        </svg>
       </div>
+
+      <!-- Status + banco -->
       <div class="ginfo">
-        <span style="font-size:.7rem;color:#4a6a80">Gradiente: 🟢 Normal → 🟡 Atenção → 🔴 Alarme</span>
+        <span>Alarme 45°C: <span id="alarme" style="color:#3fb950;font-weight:700">● Inativo</span></span>
         <span>Banco: <span id="fmodo">--</span></span>
       </div>
     </div>
@@ -567,42 +577,49 @@ function render(d) {
       tval.className = 'tnum' +
         (tAtual >= 45 ? ' critico' : tAtual >= tSet ? ' quente' : '');
 
-      // ── Termômetro SVG ──────────────────────────────────
-      const tMax = Math.max(60, tSet + 20);
-      const tubeH = 148; // altura total do tubo em px (viewBox)
-      const tubeY = 10;  // topo do tubo
+      // ── Termômetro SVG horizontal ────────────────────────
+      // ViewBox: tubo de x=30 a x=270 (240px), escala 0–60°C
+      // fórmula: xPos = 30 + (temp / 60) * 240
+      const tMax = 60;
+      const TUBE_X0 = 30, TUBE_W = 240;
 
-      // Altura de preenchimento proporcional
-      const fillH = Math.min(tubeH, Math.max(0, (tAtual / tMax) * tubeH));
-      const fillY = tubeY + tubeH - fillH;
+      const xTemp = Math.min(TUBE_X0 + TUBE_W,
+                    Math.max(TUBE_X0, TUBE_X0 + (tAtual / tMax) * TUBE_W));
+      const fillW  = xTemp - TUBE_X0;
 
-      // Atualiza clipPath do preenchimento
+      // Largura do preenchimento (clipPath)
       const fillRect = document.getElementById('termFillRect');
-      if (fillRect) {
-        fillRect.setAttribute('y',      fillY);
-        fillRect.setAttribute('height', fillH);
-      }
+      if (fillRect) fillRect.setAttribute('width', fillW.toFixed(1));
 
-      // Cor do bolbo acompanha temperatura
+      // Cor do bolbo
       const bulb = document.getElementById('termBulb');
-      if (bulb) {
-        bulb.setAttribute('fill',
-          tAtual >= 45 ? '#f85149' : tAtual >= tSet ? '#d29922' : '#238636');
+      if (bulb) bulb.setAttribute('fill',
+        tAtual >= 45 ? '#f85149' : tAtual >= tSet ? '#d29922' : '#238636');
+
+      // Ponteiro (triângulo + label) na posição da temperatura atual
+      const ptr = document.getElementById('termPointer');
+      const ptrLbl = document.getElementById('termPointerLabel');
+      if (ptr) {
+        const px = xTemp.toFixed(1);
+        ptr.setAttribute('points', `${px},70 ${(xTemp-4).toFixed(1)},80 ${(xTemp+4).toFixed(1)},80`);
+      }
+      if (ptrLbl) {
+        ptrLbl.setAttribute('x', xTemp.toFixed(1));
+        ptrLbl.textContent = tAtual.toFixed(1) + '°C';
       }
 
-      // Posição da linha de 45°C
-      const y45 = tubeY + tubeH - (45 / tMax) * tubeH;
-      const tl45 = document.getElementById('tl45');
-      const tt45 = document.getElementById('tt45');
-      if (tl45) { tl45.setAttribute('y1', y45); tl45.setAttribute('y2', y45); }
-      if (tt45) { tt45.setAttribute('y', y45 + 4); }
-
-      // Posição da linha do setpoint ventilador
-      const yVent = tubeY + tubeH - (tSet / tMax) * tubeH;
+      // Linha do setpoint ventilador (posição dinâmica)
+      const xVent = TUBE_X0 + (tSet / tMax) * TUBE_W;
       const tlvent = document.getElementById('tlvent');
-      const ttvent = document.getElementById('ttventlabel');
-      if (tlvent) { tlvent.setAttribute('y1', yVent); tlvent.setAttribute('y2', yVent); }
-      if (ttvent) { ttvent.setAttribute('y', yVent + 4); ttvent.textContent = `${tSet}°C`; }
+      const ttventlabel = document.getElementById('ttventlabel');
+      if (tlvent) {
+        tlvent.setAttribute('x1', xVent.toFixed(1));
+        tlvent.setAttribute('x2', xVent.toFixed(1));
+      }
+      if (ttventlabel) {
+        ttventlabel.setAttribute('x', xVent.toFixed(1));
+        ttventlabel.textContent = tSet.toFixed(1) + '°C vent.';
+      }
 
       // Alarme
       const alarmeEl = document.getElementById('alarme');
