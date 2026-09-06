@@ -1,3 +1,33 @@
+<!--
+=================================================================
+  index.html  —  Painel Elétrico Principal
+  Versão 4.1  —  06/09/2026
+=================================================================
+  HISTÓRICO DE ALTERAÇÕES:
+    v4.1 (06/09/2026)
+      - Termômetro SVG vertical substituiu o gauge horizontal
+        (tubo, bolbo, gradiente verde→amarelo→vermelho, linha de
+        45°C e linha de setpoint do ventilador com posição
+        calculada dinamicamente pelo JS)
+      - Temperatura: fonte reduzida de 3.8rem para 2.4rem
+      - Índice 45°C: label renomeado para "Índice — acima de 45°C"
+        e valor inicial 0 em vez de "--"
+      - Ventilador: texto completo "VENTILADOR DO PAINEL LIGADO/
+        DESLIGADO" em vez de "VENTILADOR ON/OFF"
+      - Faltas de energia: mostra 0 em vez de "--" sem ocorrências
+    v4.0 (set/2026)
+      - Navbar unificada com os 3 painéis (Painel Elétrico,
+        Gestão Energética, Câmaras Frias)
+      - Totais do Sistema movidos para acima das fases
+      - Energia por fase: "Energia (mês)" via delta do contador
+        acumulado — primeiro_do_mes via /api/indices
+      - Fator de potência: média ponderada (P_total / S_total)
+      - Índices mensais via /api/indices (query leve)
+      - Energia do mês total via /api/gestao
+    v3.x (ago/2026)
+      - Versões anteriores com gauge horizontal e layout básico
+=================================================================
+-->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -37,8 +67,8 @@
   .temp-card{background:linear-gradient(135deg,#1c2a3a,#162032);border:1px solid #1f6feb;border-radius:14px;padding:22px 26px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:24px;align-items:start}
   .tlabel{font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;font-weight:700}
   .tlabel-desc{font-size:.74rem;color:#4a6a80;margin-bottom:10px;line-height:1.4}
-  .tnum{font-size:3.8rem;font-weight:700;line-height:1;color:#58a6ff;margin-bottom:8px}
-  .tnum span{font-size:1.3rem;font-weight:400;color:#8b949e}
+  .tnum{font-size:2.4rem;font-weight:700;line-height:1;color:#58a6ff;margin-bottom:8px}
+  .tnum span{font-size:.95rem;font-weight:400;color:#8b949e}
   .tnum.quente{color:#f0883e}
   .tnum.critico{color:#f85149}
   .tsub{font-size:.78rem;color:#8b949e;margin-bottom:4px}
@@ -46,20 +76,19 @@
   .talerta-linha{font-size:.78rem;color:#f85149;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:5px}
   .tindice{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:9px 13px;margin-top:4px}
   .tindice-label{font-size:.68rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
-  .tindice-val{font-size:1.4rem;font-weight:700;color:#f85149}
+  .tindice-val{font-size:1.2rem;font-weight:700;color:#f85149}
   .tindice-sub{font-size:.65rem;color:#4a6a80;margin-top:2px}
 
-  /* ── Gauge ──────────────────────────────────────────────── */
-  .gauge-wrap{display:flex;flex-direction:column;gap:6px;padding-top:4px}
-  .gtitle{font-size:.76rem;color:#8b949e;margin-bottom:2px}
-  .gbar-wrap{position:relative;padding-top:22px;margin-bottom:4px}
-  .gbar-alarme-pin{position:absolute;top:0;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%)}
-  .gbar-alarme-pin-label{font-size:.65rem;color:#f85149;font-weight:700;white-space:nowrap;background:#0d1117;padding:1px 4px;border-radius:3px;border:1px solid #f8514955}
-  .gbar-alarme-pin-line{width:2px;height:10px;background:#f85149;border-radius:1px;margin-top:2px}
-  .gbar{height:14px;background:#21262d;border-radius:7px;overflow:hidden}
-  .gfill{height:100%;border-radius:7px;background:linear-gradient(90deg,#238636,#d29922,#f85149);transition:width .8s ease}
-  .glabels{display:flex;justify-content:space-between;font-size:.68rem;color:#8b949e;margin-top:4px}
-  .ginfo{display:flex;justify-content:space-between;margin-top:8px;font-size:.75rem;color:#8b949e}
+  /* ── Termômetro ─────────────────────────────────────────── */
+  .gauge-wrap{display:flex;flex-direction:column;gap:4px;padding-top:4px}
+  .gtitle{font-size:.76rem;color:#8b949e;margin-bottom:6px;text-align:center;font-weight:600}
+  .termometro-area{display:flex;align-items:flex-end;gap:10px;justify-content:center;padding:4px 0 8px}
+  .term-svg-wrap{flex-shrink:0}
+  .term-escala{display:flex;flex-direction:column;justify-content:space-between;padding:4px 0}
+  .term-escala span{font-size:.65rem;color:#8b949e;line-height:1;white-space:nowrap}
+  .term-escala span.alarme{color:#f85149;font-weight:700}
+  .term-escala span.vent{color:#d29922;font-weight:700}
+  .ginfo{display:flex;justify-content:space-between;margin-top:6px;font-size:.72rem;color:#8b949e}
 
   /* ── Ventilador ─────────────────────────────────────────── */
   .fan-box{display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:4px}
@@ -159,30 +188,78 @@
       <div class="tsub">Setpoint ventilador: <b id="tset">--°C</b></div>
       <div class="talerta-linha">🔴 Alarme crítico: 45°C</div>
       <div class="tindice">
-        <div class="tindice-label">🔥 Excedências acima de 45°C</div>
-        <div class="tindice-val" id="excedencias-45">--</div>
+        <div class="tindice-label">🔥 Índice — acima de 45°C</div>
+        <div class="tindice-val" id="excedencias-45">0</div>
         <div class="tindice-sub">ocorrências registradas no mês atual</div>
       </div>
     </div>
 
-    <!-- Coluna central: gauge -->
+    <!-- Coluna central: termômetro SVG -->
     <div class="gauge-wrap">
-      <div class="gtitle">Nível de temperatura (0°C → <span id="tmax-label">60°C</span>)</div>
-      <div class="gbar-wrap">
-        <!-- Marcador dos 45°C — posição calculada pelo JS -->
-        <div class="gbar-alarme-pin" id="pin45" style="left:75%">
-          <div class="gbar-alarme-pin-label">45°C ⚠️</div>
-          <div class="gbar-alarme-pin-line"></div>
+      <div class="gtitle">🌡️ Termômetro — Painel Elétrico</div>
+      <div class="termometro-area">
+
+        <!-- Tubo SVG -->
+        <div class="term-svg-wrap">
+          <svg id="term-svg" width="52" height="200" viewBox="0 0 52 200" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="termGrad" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0%"   stop-color="#238636"/>
+                <stop offset="60%"  stop-color="#d29922"/>
+                <stop offset="100%" stop-color="#f85149"/>
+              </linearGradient>
+              <clipPath id="termClip">
+                <rect id="termFillRect" x="19" y="10" width="14" height="0" rx="4"/>
+              </clipPath>
+            </defs>
+            <!-- Tubo fundo -->
+            <rect x="19" y="10" width="14" height="148" rx="7" fill="#1a2535" stroke="#30363d" stroke-width="1.5"/>
+            <!-- Preenchimento com gradiente e clip animado -->
+            <rect x="19" y="10" width="14" height="148" rx="7" fill="url(#termGrad)" clip-path="url(#termClip)"/>
+            <!-- Reflexo -->
+            <rect x="22" y="13" width="3.5" height="142" rx="2" fill="white" opacity=".07"/>
+            <!-- Linha 45°C -->
+            <line id="tl45" x1="13" y1="80" x2="33" y2="80" stroke="#f85149" stroke-width="1.8" stroke-dasharray="4,2"/>
+            <text id="tt45" x="35" y="84" font-size="8" fill="#f85149" font-weight="bold" font-family="'Segoe UI',sans-serif">45°C</text>
+            <!-- Linha setpoint ventilador -->
+            <line id="tlvent" x1="13" y1="100" x2="33" y2="100" stroke="#d29922" stroke-width="1.5" stroke-dasharray="3,2"/>
+            <text id="ttvent" x="35" y="104" font-size="7.5" fill="#d29922" font-family="'Segoe UI',sans-serif" id="ttventlabel">--°C vent.</text>
+            <!-- Bolbo -->
+            <circle cx="26" cy="172" r="14" fill="#1a2535" stroke="#30363d" stroke-width="1.5"/>
+            <circle id="termBulb" cx="26" cy="172" r="11" fill="#238636"/>
+            <circle cx="22" cy="168" r="3" fill="white" opacity=".12"/>
+            <!-- Tick marks -->
+            <line x1="33" y1="10"  x2="37" y2="10"  stroke="#30363d" stroke-width="1"/>
+            <line x1="33" y1="47"  x2="36" y2="47"  stroke="#30363d" stroke-width="1"/>
+            <line x1="33" y1="84"  x2="36" y2="84"  stroke="#30363d" stroke-width="1"/>
+            <line x1="33" y1="121" x2="36" y2="121" stroke="#30363d" stroke-width="1"/>
+            <line x1="33" y1="158" x2="37" y2="158" stroke="#30363d" stroke-width="1"/>
+          </svg>
         </div>
-        <div class="gbar"><div class="gfill" id="gfill" style="width:0%"></div></div>
-      </div>
-      <div class="glabels">
-        <span>0°C</span>
-        <span id="gwarn-label" style="color:#d29922">--°C vent.</span>
-        <span style="color:#f85149" id="tmax-label2">60°C 🔴</span>
+
+        <!-- Legenda -->
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:.7rem;padding-bottom:30px;justify-content:center">
+          <div style="display:flex;align-items:center;gap:5px">
+            <div style="width:10px;height:2px;background:#f85149;border-radius:1px"></div>
+            <span style="color:#f85149;font-weight:700">45°C — Alarme</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <div style="width:10px;height:2px;background:#d29922;border-radius:1px"></div>
+            <span style="color:#d29922;font-weight:700">Setpoint vent.</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <div style="width:10px;height:10px;background:linear-gradient(#f85149,#238636);border-radius:2px"></div>
+            <span style="color:#8b949e">Faixa térmica</span>
+          </div>
+          <div style="margin-top:4px;padding:5px 8px;background:#0d1117;border-radius:6px;border:1px solid #30363d">
+            <div style="font-size:.65rem;color:#8b949e;margin-bottom:2px">ALARME 45°C</div>
+            <div id="alarme" style="color:#3fb950;font-weight:700;font-size:.78rem">● Inativo</div>
+          </div>
+        </div>
+
       </div>
       <div class="ginfo">
-        <span>Alarme 45°C: <span id="alarme" style="color:#3fb950">Inativo</span></span>
+        <span style="font-size:.7rem;color:#4a6a80">Gradiente: 🟢 Normal → 🟡 Atenção → 🔴 Alarme</span>
         <span>Banco: <span id="fmodo">--</span></span>
       </div>
     </div>
@@ -190,11 +267,15 @@
     <!-- Coluna direita: ventilador -->
     <div class="fan-box">
       <div class="ficon" id="ficon">🌀</div>
-      <div class="fbadge off" id="fbadge">VENTILADOR OFF</div>
+      <div class="fbadge off" id="fbadge">VENTILADOR DO PAINEL DESLIGADO</div>
       <div style="font-size:.72rem;color:#8b949e;margin-top:4px" id="fmodolab">--</div>
     </div>
 
   </div>
+
+        <div class="gbar-alarme-pin" id="pin45" style="left:75%">
+          <div class="gbar-alarme-pin-label">45°C ⚠️</div>
+  
 
   <!-- ── Alertas ativos ────────────────────────────────────── -->
   <div class="alertas-box" id="abox">
@@ -490,33 +571,56 @@ function render(d) {
       tval.className = 'tnum' +
         (tAtual >= 45 ? ' critico' : tAtual >= tSet ? ' quente' : '');
 
-      const tMax = Math.max(60, tSet + 22);
-      document.getElementById('gfill').style.width =
-        Math.min(100, (tAtual / tMax) * 100) + '%';
-      setText('tmax-label',  `${tMax.toFixed(0)}°C`);
-      setText('tmax-label2', `${tMax.toFixed(0)}°C 🔴`);
+      // ── Termômetro SVG ──────────────────────────────────
+      const tMax = Math.max(60, tSet + 20);
+      const tubeH = 148; // altura total do tubo em px (viewBox)
+      const tubeY = 10;  // topo do tubo
 
-      // Posiciona o marcador dos 45°C no gauge
-      const pct45 = Math.min(100, (45 / tMax) * 100);
-      const pin = document.getElementById('pin45');
-      if (pin) pin.style.left = pct45 + '%';
+      // Altura de preenchimento proporcional
+      const fillH = Math.min(tubeH, Math.max(0, (tAtual / tMax) * tubeH));
+      const fillY = tubeY + tubeH - fillH;
+
+      // Atualiza clipPath do preenchimento
+      const fillRect = document.getElementById('termFillRect');
+      if (fillRect) {
+        fillRect.setAttribute('y',      fillY);
+        fillRect.setAttribute('height', fillH);
+      }
+
+      // Cor do bolbo acompanha temperatura
+      const bulb = document.getElementById('termBulb');
+      if (bulb) {
+        bulb.setAttribute('fill',
+          tAtual >= 45 ? '#f85149' : tAtual >= tSet ? '#d29922' : '#238636');
+      }
+
+      // Posição da linha de 45°C
+      const y45 = tubeY + tubeH - (45 / tMax) * tubeH;
+      const tl45 = document.getElementById('tl45');
+      const tt45 = document.getElementById('tt45');
+      if (tl45) { tl45.setAttribute('y1', y45); tl45.setAttribute('y2', y45); }
+      if (tt45) { tt45.setAttribute('y', y45 + 4); }
+
+      // Posição da linha do setpoint ventilador
+      const yVent = tubeY + tubeH - (tSet / tMax) * tubeH;
+      const tlvent = document.getElementById('tlvent');
+      const ttvent = document.getElementById('ttventlabel');
+      if (tlvent) { tlvent.setAttribute('y1', yVent); tlvent.setAttribute('y2', yVent); }
+      if (ttvent) { ttvent.setAttribute('y', yVent + 4); ttvent.textContent = `${tSet}°C`; }
 
       // Alarme
       const alarmeEl = document.getElementById('alarme');
       if (alarmeEl) {
         if (tAtual >= 45) {
-          alarmeEl.textContent = '🔴 ATIVO';
-          alarmeEl.style.color = '#f85149';
+          alarmeEl.textContent = '● ATIVO'; alarmeEl.style.color = '#f85149';
         } else {
-          alarmeEl.textContent = 'Inativo';
-          alarmeEl.style.color = '#3fb950';
+          alarmeEl.textContent = '● Inativo'; alarmeEl.style.color = '#3fb950';
         }
       }
     }
 
     if (temp.temp_set !== null) {
       setText('tset', `${temp.temp_set}°C`);
-      setText('gwarn-label', `${temp.temp_set}°C vent.`);
     }
 
     const ventLigado = temp.ventilador_ligado !== undefined
@@ -527,10 +631,10 @@ function render(d) {
     const fb = document.getElementById('fbadge');
     if (ventLigado) {
       fi.classList.add('spin');
-      fb.textContent = 'VENTILADOR ON'; fb.className = 'fbadge';
+      fb.textContent = 'VENTILADOR DO PAINEL LIGADO'; fb.className = 'fbadge';
     } else {
       fi.classList.remove('spin');
-      fb.textContent = 'VENTILADOR OFF'; fb.className = 'fbadge off';
+      fb.textContent = 'VENTILADOR DO PAINEL DESLIGADO'; fb.className = 'fbadge off';
     }
   }
 
@@ -574,8 +678,8 @@ async function carregarIndices() {
     if (r.ok) {
       const idx = await r.json();
 
-      setText('excedencias-45', String(idx.excedencias_45 ?? '--'));
-      setText('faltas-mes',     String(idx.faltas_energia  ?? '--'));
+      setText('excedencias-45', String(idx.excedencias_45 ?? 0));
+      setText('faltas-mes',     String(idx.faltas_energia  ?? 0));
 
       // Energia por fase do MÊS = (energia_atual - energia_primeiro_do_mes) / 100
       // O divisor 100 converte centésimos de Wh → kWh (confirmado pelo Supabase)
