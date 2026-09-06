@@ -1,9 +1,15 @@
 <!--
 =================================================================
   index.html  —  Painel Elétrico Principal
-  Versão 4.3  —  06/09/2026
+  Versão 4.4  —  06/09/2026
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
+    v4.4 (06/09/2026)
+      - Energia por fase: reescrita sem cache — carregarIndices
+        calcula delta direto com primeiro_do_mes do /api/indices
+        Fallback: se energiaAtual ainda null, busca último registro
+        via /api/historico para não depender do ciclo de 5 min
+      - calcularEnergiaPorFase() simplificada (chama carregarIndices)
     v4.3 (06/09/2026)
       - Energia por fase: corrigida condição de corrida
         calcularEnergiaPorFase() separada em função própria,
@@ -703,22 +709,48 @@ async function carregarHistorico() {
 //
 // Energia do mês (total) vem de /api/gestao.
 
-// Cache do primeiro registro do mês (evita buscar toda vez no timer)
-let primeirodoMesCache = null;
-
 async function carregarIndices() {
-  // ── 1. Índices leves via /api/indices ──────────────────────
+  // ── 1. Índices leves via /api/indices ─────────────────────
   try {
     const r = await fetch(API_INDICES + '?_t=' + Date.now());
     if (r.ok) {
       const idx = await r.json();
-
       setText('excedencias-45', String(idx.excedencias_45 ?? 0));
       setText('faltas-mes',     String(idx.faltas_energia  ?? 0));
 
-      // Guarda o primeiro_do_mes em cache para usar no calcularEnergiaPorFase
-      if (idx.primeiro_do_mes) {
-        primeirodoMesCache = idx.primeiro_do_mes;
+      // Energia por fase do MÊS
+      // primeiro_do_mes vem direto do /api/indices (query ASC LIMIT 1)
+      // energiaAtual vem do último render() — se ainda null, skip
+      const pMes = idx.primeiro_do_mes;
+      if (pMes && energiaAtual.a !== null) {
+        const calcDelta = (atual, inicio) => {
+          if (atual === null || inicio === null) return null;
+          const delta = Number(atual) - Number(inicio);
+          return delta >= 0 ? delta / 100 : null;
+        };
+        setVal('ea', calcDelta(energiaAtual.a, pMes.energia_a), 2, 'kWh');
+        setVal('eb', calcDelta(energiaAtual.b, pMes.energia_b), 2, 'kWh');
+        setVal('ec', calcDelta(energiaAtual.c, pMes.energia_c), 2, 'kWh');
+      } else if (pMes && energiaAtual.a === null) {
+        // energiaAtual ainda não chegou — busca o último registro do banco
+        // para calcular o delta sem esperar o próximo ciclo de 5 min
+        try {
+          const rU = await fetch(API_HIST + '&limit=1&_t=' + Date.now());
+          if (rU.ok) {
+            const ultimo = await rU.json();
+            if (ultimo && ultimo.length > 0) {
+              const u = ultimo[0];
+              const calcDelta = (atual, inicio) => {
+                if (!atual || !inicio) return null;
+                const delta = Number(atual) - Number(inicio);
+                return delta >= 0 ? delta / 100 : null;
+              };
+              setVal('ea', calcDelta(u.energia_a, pMes.energia_a), 2, 'kWh');
+              setVal('eb', calcDelta(u.energia_b, pMes.energia_b), 2, 'kWh');
+              setVal('ec', calcDelta(u.energia_c, pMes.energia_c), 2, 'kWh');
+            }
+          }
+        } catch(e) { console.error('Erro busca último registro:', e); }
       }
     }
   } catch (e) { console.error('Erro índices:', e); }
@@ -735,39 +767,14 @@ async function carregarIndices() {
       }
     }
   } catch (e) { console.error('Erro gestao:', e); }
-
-  // ── 3. Calcular energia por fase com dados disponíveis ──────
-  calcularEnergiaPorFase();
 }
 
+// Recalcula energia por fase quando render() atualiza energiaAtual
+// Chama carregarIndices para pegar o primeiro_do_mes atualizado
 function calcularEnergiaPorFase() {
-  // Energia por fase do MÊS = (energia_atual - energia_inicio_mes) / 100
-  // Divisor 100: EARU envia em centésimos de Wh → kWh (confirmado pelo banco)
-  //
-  // Só calcula quando AMBOS estão disponíveis:
-  //   energiaAtual  → preenchido pelo render() após cada chamada a /api/dados
-  //   primeirodoMesCache → preenchido pelo carregarIndices() via /api/indices
-  //
-  // Isso resolve a condição de corrida: se um dos dois ainda não chegou,
-  // aguarda o próximo ciclo (atualizar() chama render() e depois carregarIndices())
-
-  const pMes = primeirodoMesCache;
-  if (!pMes)                   return;  // índices ainda não carregaram
-  if (energiaAtual.a === null) return;  // dados do medidor ainda não chegaram
-
-  const calcDelta = (atual, inicio) => {
-    if (atual === null || inicio === null) return null;
-    const delta = Number(atual) - Number(inicio);
-    return delta >= 0 ? delta / 100 : null;
-  };
-
-  const deltaA = calcDelta(energiaAtual.a, pMes.energia_a);
-  const deltaB = calcDelta(energiaAtual.b, pMes.energia_b);
-  const deltaC = calcDelta(energiaAtual.c, pMes.energia_c);
-
-  setVal('ea', deltaA, 2, 'kWh');
-  setVal('eb', deltaB, 2, 'kWh');
-  setVal('ec', deltaC, 2, 'kWh');
+  // Chamada pelo render() — simplesmente dispara carregarIndices
+  // que já tem toda a lógica de delta
+  carregarIndices();
 }
 
 // ── Atualização principal ────────────────────────────────────
