@@ -1,7 +1,7 @@
 <!--
 =================================================================
   index.html  —  Painel Elétrico Principal
-  Versão 4.9  —  06/09/2026
+  Versão 4.10  —  06/09/2026
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
     v4.7 (
@@ -590,7 +590,7 @@ async function mudarPeriodoLongo(tipo, periodo, sel) {
   sel.disabled = true;
 
   try {
-    const cacheKey = tipo + '_' + periodo;
+    const cacheKey = tipo + '_' + periodo + '_v1.1';  // atualizar ao mudar o endpoint
 
     // Usa cache se já buscou esse período
     if (!dadosAgregados[cacheKey]) {
