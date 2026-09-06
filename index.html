@@ -1,7 +1,7 @@
 <!--
 =================================================================
   index.html  —  Painel Elétrico Principal
-  Versão 4.8  —  06/09/2026
+  Versão 4.9  —  06/09/2026
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
     v4.7 (
@@ -132,6 +132,9 @@
   .c-btn{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:.68rem;font-weight:600;padding:3px 10px;border-radius:4px;cursor:pointer;transition:all .2s}
   .c-btn:hover{background:#30363d;color:#e6edf3}
   .c-btn.active{background:#1f6feb;color:#fff;border-color:#58a6ff}
+  .period-select{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:.68rem;font-weight:600;padding:3px 6px;border-radius:4px;cursor:pointer;height:26px;outline:none;transition:all .2s}
+  .period-select:hover{background:#30363d;color:#e6edf3;border-color:#484f58}
+  .period-select option{background:#161b22}
 
   /* ── Cards totais ───────────────────────────────────────── */
   .totais{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}
@@ -389,6 +392,13 @@
       <button class="c-btn" onclick="mudarPeriodo('temp',144,this)">12h</button>
       <button class="c-btn" onclick="mudarPeriodo('temp',288,this)">24h</button>
       <button class="c-btn active" onclick="mudarPeriodo('temp',432,this)">36h</button>
+      <select class="period-select" onchange="mudarPeriodoLongo('temp', this.value, this)">
+        <option value="">+ período</option>
+        <option value="7d">7 dias</option>
+        <option value="30d">1 mês</option>
+        <option value="180d">6 meses</option>
+        <option value="total">Total</option>
+      </select>
     </div>
   </div>
   <div class="chart-container">
@@ -406,6 +416,13 @@
       <button class="c-btn" onclick="mudarPeriodo('tensao',144,this)">12h</button>
       <button class="c-btn" onclick="mudarPeriodo('tensao',288,this)">24h</button>
       <button class="c-btn active" onclick="mudarPeriodo('tensao',432,this)">36h</button>
+      <select class="period-select" onchange="mudarPeriodoLongo('tensao', this.value, this)">
+        <option value="">+ período</option>
+        <option value="7d">7 dias</option>
+        <option value="30d">1 mês</option>
+        <option value="180d">6 meses</option>
+        <option value="total">Total</option>
+      </select>
     </div>
   </div>
   <div class="chart-container">
@@ -423,6 +440,13 @@
       <button class="c-btn" onclick="mudarPeriodo('corrente',144,this)">12h</button>
       <button class="c-btn" onclick="mudarPeriodo('corrente',288,this)">24h</button>
       <button class="c-btn active" onclick="mudarPeriodo('corrente',432,this)">36h</button>
+      <select class="period-select" onchange="mudarPeriodoLongo('corrente', this.value, this)">
+        <option value="">+ período</option>
+        <option value="7d">7 dias</option>
+        <option value="30d">1 mês</option>
+        <option value="180d">6 meses</option>
+        <option value="total">Total</option>
+      </select>
     </div>
   </div>
   <div class="chart-container">
@@ -440,6 +464,13 @@
       <button class="c-btn" onclick="mudarPeriodo('potencia',144,this)">12h</button>
       <button class="c-btn" onclick="mudarPeriodo('potencia',288,this)">24h</button>
       <button class="c-btn active" onclick="mudarPeriodo('potencia',432,this)">36h</button>
+      <select class="period-select" onchange="mudarPeriodoLongo('potencia', this.value, this)">
+        <option value="">+ período</option>
+        <option value="7d">7 dias</option>
+        <option value="30d">1 mês</option>
+        <option value="180d">6 meses</option>
+        <option value="total">Total</option>
+      </select>
     </div>
   </div>
   <div class="chart-container">
@@ -463,6 +494,7 @@ const API_DADOS    = `${BASE}/api/dados?device_id=${DEV_TERM}`;
 const API_HIST     = `${BASE}/api/historico?device_id=${DEV_TERM}`;
 const API_GESTAO   = `${BASE}/api/gestao`;
 const API_INDICES  = `${BASE}/api/indices`;
+const API_HIST_AGG = `${BASE}/api/historico-agregado`;
 
 let historico = [];
 let limites   = { temp: 432, tensao: 432, corrente: 432, potencia: 432 };
@@ -533,9 +565,88 @@ const chartPotencia = new Chart(
 
 function mudarPeriodo(tipo, qtd, btn) {
   limites[tipo] = qtd;
+  // Desativa botões e reseta o select do mesmo grupo
   btn.parentElement.querySelectorAll('.c-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  const sel = btn.parentElement.querySelector('.period-select');
+  if (sel) sel.value = '';
+  // Garante que o gráfico usa dados do histórico curto
+  modoAgregado[tipo] = null;
   renderizarGraficos();
+}
+
+// Cache dos dados agregados por tipo e período
+const dadosAgregados = {};
+const modoAgregado   = { temp: null, tensao: null, corrente: null, potencia: null };
+
+async function mudarPeriodoLongo(tipo, periodo, sel) {
+  if (!periodo) return;  // opção "+" foi selecionada
+
+  // Desativa botões 12h/24h/36h visualmente
+  sel.parentElement.querySelectorAll('.c-btn').forEach(b => b.classList.remove('active'));
+
+  // Mostra carregando no select
+  const textoOriginal = sel.options[sel.selectedIndex].text;
+  sel.disabled = true;
+
+  try {
+    const cacheKey = tipo + '_' + periodo;
+
+    // Usa cache se já buscou esse período
+    if (!dadosAgregados[cacheKey]) {
+      const r = await fetch(`${API_HIST_AGG}?periodo=${periodo}&_t=${Date.now()}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      dadosAgregados[cacheKey] = await r.json();
+    }
+
+    const d = dadosAgregados[cacheKey];
+    if (!d || !d.series) throw new Error('Dados inválidos');
+
+    modoAgregado[tipo] = d;
+    aplicarDadosAgregados(tipo, d);
+
+  } catch (e) {
+    console.error('Erro ao buscar período longo:', e);
+    sel.value = '';
+  } finally {
+    sel.disabled = false;
+  }
+}
+
+function aplicarDadosAgregados(tipo, d) {
+  const s = d.series;
+  const labels = s.labels;
+
+  if (tipo === 'temp') {
+    chartTemp.data.labels           = labels;
+    chartTemp.data.datasets[0].data = s.temp;
+    chartTemp.update();
+    atualizarStats('temp', s.temp, 1);
+  }
+  else if (tipo === 'tensao') {
+    chartTensao.data.labels           = labels;
+    chartTensao.data.datasets[0].data = s.tensao_a;
+    chartTensao.data.datasets[1].data = s.tensao_b;
+    chartTensao.data.datasets[2].data = s.tensao_c;
+    chartTensao.update();
+    atualizarStats('tensao', [...s.tensao_a, ...s.tensao_b, ...s.tensao_c], 1);
+  }
+  else if (tipo === 'corrente') {
+    chartCorrente.data.labels           = labels;
+    chartCorrente.data.datasets[0].data = s.corrente_a;
+    chartCorrente.data.datasets[1].data = s.corrente_b;
+    chartCorrente.data.datasets[2].data = s.corrente_c;
+    chartCorrente.update();
+    atualizarStats('corrente', [...s.corrente_a, ...s.corrente_b, ...s.corrente_c], 1);
+  }
+  else if (tipo === 'potencia') {
+    chartPotencia.data.labels           = labels;
+    chartPotencia.data.datasets[0].data = s.potencia_a;
+    chartPotencia.data.datasets[1].data = s.potencia_b;
+    chartPotencia.data.datasets[2].data = s.potencia_c;
+    chartPotencia.update();
+    atualizarStats('potencia', [...s.potencia_a, ...s.potencia_b, ...s.potencia_c], 0);
+  }
 }
 
 // ── Helpers para stats min/med/max ──────────────────────────
