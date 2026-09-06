@@ -1,8 +1,16 @@
 // =============================================================
 // api/historico-agregado.js  —  Histórico Agregado por Período
-// Versão 1.0  —  06/09/2026
+// Versão 1.1  —  06/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.1 (06/09/2026)
+//     - Labels corrigidos por período:
+//         7d   → "DD/MM HH:MM" (dia + hora + minuto)
+//         30d  → "DD/MM HHh"   (dia + hora resumida)
+//         180d → "DD/MM"       (só o dia)
+//         total→ "DD/MM/AA"    (dia + ano)
+//     - Corrigido: new Date() aplicado ao campo periodo/ts
+//       antes de passar para o Intl.DateTimeFormat
 //   v1.0 (06/09/2026)
 //     - Endpoint para períodos longos com agregação no banco
 //     - Parâmetro ?periodo= define a janela e a resolução:
@@ -119,7 +127,7 @@ async function querySimples(supabase, cfg, inicioISO, res, periodo) {
   try {
     // Define o intervalo de agrupamento em minutos
     const intervaloMin = {
-      'hour':     60,
+      'hour':     60,    // 60 min — para 7d
       '6 hours':  360,
       'day':      1440,
       'week':     10080,
@@ -136,7 +144,7 @@ async function querySimples(supabase, cfg, inicioISO, res, periodo) {
 
     // Para evitar timeout, limita registros brutos e agrega no Node
     const limite = {
-      '7d':    10080,  // 1 semana × 5min = 2016, seguro
+      '7d':     2016,  // 1 semana × 5min = 2016 registros brutos, agrega por hora
       '30d':    8640,  // 30 dias × 5min = 8640
       '180d':  26000,  // amostragem: 1 a cada ~20min nos últimos 6 meses
       'total': 20000,  // amostragem total
@@ -210,22 +218,46 @@ async function querySimples(supabase, cfg, inicioISO, res, periodo) {
 
 // ── Formata a resposta para o frontend ───────────────────────
 function formatarResposta(dados, periodo) {
+
+  // Label com granularidade adequada para cada período
+  // 7d:    "07/08 14:00" — dia + hora (4 pontos/dia com 6h)
+  // 30d:   "07/08 14h"   — dia + hora resumida (1 ponto/6h)
+  // 180d:  "07/08"       — só dia (1 ponto/dia)
+  // total: "07/08/26"    — dia + ano (1 ponto/semana)
   const fmtLabel = (ts) => {
     const d = new Date(ts);
-    const local = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: TIMEZONE,
-      day: '2-digit', month: '2-digit',
-      hour: ['7d'].includes(periodo) ? '2-digit' : undefined,
-      minute: ['7d'].includes(periodo) ? '2-digit' : undefined,
+    if (isNaN(d.getTime())) return '--';
+
+    const opts = { timeZone: TIMEZONE };
+
+    if (periodo === '7d') {
+      // "07/08 14:00"
+      return new Intl.DateTimeFormat('pt-BR', {
+        ...opts, day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      }).format(d);
+    }
+    if (periodo === '30d') {
+      // "07/08 14h"
+      const dia  = new Intl.DateTimeFormat('pt-BR', { ...opts, day: '2-digit', month: '2-digit' }).format(d);
+      const hora = new Intl.DateTimeFormat('pt-BR', { ...opts, hour: '2-digit' }).format(d).replace(':00','');
+      return `${dia} ${hora}h`;
+    }
+    if (periodo === '180d') {
+      // "07/08"
+      return new Intl.DateTimeFormat('pt-BR', { ...opts, day: '2-digit', month: '2-digit' }).format(d);
+    }
+    // total: "07/08/26"
+    return new Intl.DateTimeFormat('pt-BR', {
+      ...opts, day: '2-digit', month: '2-digit', year: '2-digit'
     }).format(d);
-    return local;
   };
 
   return {
     periodo,
     pontos: dados.length,
     series: {
-      labels:     dados.map(d => fmtLabel(d.periodo || d.ts)),
+      labels:     dados.map(d => fmtLabel(new Date(d.periodo || d.ts))),
       tensao_a:   dados.map(d => d.tensao_a),
       tensao_b:   dados.map(d => d.tensao_b),
       tensao_c:   dados.map(d => d.tensao_c),
