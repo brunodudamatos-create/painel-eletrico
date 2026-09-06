@@ -1,37 +1,45 @@
 // =============================================================
-// api/dados.js  —  Coleta Tuya + Alarmes + Supabase  v3.1
+// api/dados.js  —  Coleta Tuya + Alarmes + Supabase
+// Versão 3.3  —  06/09/2026
 // =============================================================
-//
-// CORREÇÕES em relação à versão original:
-//
-//   1. ALARME DE TEMPERATURA CORRIGIDO
-//      Antes: disparava quando temp_atual > temp_set (setpoint do termostato)
-//      Agora: dispara quando temp_atual >= 45°C (limite físico fixo)
-//      Motivo: o setpoint do termostato controla o ventilador, não é um
-//              limite de alarme. O alarme deve refletir risco ao equipamento.
-//
-//   2. ALARME DE FLATLINE (QUEDA DE ENERGIA) — NOVO
-//      Monitora tensao_a, corrente_a e potencia_total nas últimas
-//      FLATLINE_LEITURAS (4) gravações. Se os 3 sinais ficarem com
-//      o mesmo valor por 4 leituras consecutivas, o medidor está
-//      travado (sem energia ou sem comunicação real com a rede).
-//      Envia alerta Telegram: "⚠️ ALERTA: Falta de energia detectada."
-//
-//   3. O restante do código (Tuya, Supabase, lógica de alertas,
-//      estado em status_alarmes) permanece idêntico ao original.
-//
-// DISPARO:
-//   O UptimeRobot chama /api/dados a cada 5 minutos.
-//   Não é necessário nenhum cron job na Vercel.
+// HISTÓRICO DE ALTERAÇÕES:
+//   v3.3 (06/09/2026)
+//     - Alarme de tensão alta: lógica contextual baseada em análise
+//       estatística de 30 dias de dados reais do banco
+//     - SUPRIMIDO quando exportando (potencia_total < 0) — tensão
+//       elevada é efeito normal do inversor solar injetando na rede
+//     - SUPRIMIDO entre 06h–16h (Cuiabá) — inversor pode estar ativo
+//       mesmo com potencia_total >= 0 (consumo absorvendo a geração)
+//     - Limite ajustado para 139V (base: P95 consumindo = 137V,
+//       máx histórico consumindo = 139.6V — picos raros e anômalos)
+//     - Mensagem de alarme inclui instrução de ação:
+//       "Abrir chamado na concessionária solicitando regularização"
+//     - Tensão baixa (< 111V): mantida, sempre alarma
+//   v3.2 (06/09/2026)
+//     - Corrigida variável deveEnviarTelegram (estava sem declaração
+//       let, causando FUNCTION_INVOCATION_FAILED na Vercel)
+//     - Gravação de evento em eventos_sistema ao detectar flatline
+//     - estadoAnterior buscado antes da detecção de flatline
+//   v3.1 (ago/2026)
+//     - Alarme de temperatura: fixo em 45°C
+//     - Alarme de flatline: detecta medidor travado após 4 leituras
 // =============================================================
-
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 // ── Constantes ────────────────────────────────────────────────
 
-const LIMITE_TENSAO_MAX  = 139;    // V — acima → alerta
-const LIMITE_TENSAO_MIN  = 111;    // V — abaixo (e > 0) → alerta
+const LIMITE_TENSAO_MAX_CONSUMINDO = 139;  // V — alarme SEM geração solar
+//   Base: consumindo sem geração, P95 = 137V, máx histórico = 139.6V
+//   Acima de 139V sem geração = problema real da concessionária
+const LIMITE_TENSAO_MAX_EXPORTANDO = 999;  // V — nunca alarma tensão alta exportando
+//   Tensão alta exportando = inversor operando normalmente (até 143V visto)
+//   Sem ação possível sem impacto financeiro — silenciado completamente
+const LIMITE_TENSAO_MIN  = 111;    // V — abaixo (e > 0) → alerta queda
+// Horário solar: inversor só opera entre 06h e 16h (Cuiabá, GMT-4 fixo)
+// Fora desse horário o inversor certamente não está ativo
+const HORA_SOLAR_INICIO  = 6;     // hora local Cuiabá
+const HORA_SOLAR_FIM     = 16;    // hora local Cuiabá (exclusivo)
 const LIMITE_TEMP_ALARME = 45.0;   // °C — limite físico fixo de temperatura
 const FLATLINE_LEITURAS  = 4;      // leituras idênticas consecutivas = medidor travado
 const TIMEZONE           = 'America/Cuiaba';
@@ -331,13 +339,51 @@ export default async function handler(req, res) {
     const ta = parseFloat(eletrico.tensao_a);
     const tb = parseFloat(eletrico.tensao_b);
     const tc = parseFloat(eletrico.tensao_c);
+    const potTotal = parseFloat(eletrico.potencia_total);
 
-    if (!isNaN(ta) && ta > LIMITE_TENSAO_MAX) alertas.push(`*Fase A:* ${ta}V - Tensão acima de ${LIMITE_TENSAO_MAX}V`);
-    if (!isNaN(ta) && ta < LIMITE_TENSAO_MIN && ta > 0) alertas.push(`*Fase A:* ${ta}V - Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
-    if (!isNaN(tb) && tb > LIMITE_TENSAO_MAX) alertas.push(`*Fase B:* ${tb}V - Tensão acima de ${LIMITE_TENSAO_MAX}V`);
-    if (!isNaN(tb) && tb < LIMITE_TENSAO_MIN && tb > 0) alertas.push(`*Fase B:* ${tb}V - Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
-    if (!isNaN(tc) && tc > LIMITE_TENSAO_MAX) alertas.push(`*Fase C:* ${tc}V - Tensão acima de ${LIMITE_TENSAO_MAX}V`);
-    if (!isNaN(tc) && tc < LIMITE_TENSAO_MIN && tc > 0) alertas.push(`*Fase C:* ${tc}V - Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
+    // ── Lógica contextual de tensão alta ─────────────────────────
+    //
+    // Critérios para suprimir o alarme de tensão alta:
+    //   1. Sistema exportando (potencia_total < 0): inversor injetando
+    //      na rede → tensão elevada é normal, sem ação possível
+    //   2. Dentro do horário solar (06h–16h Cuiabá): inversor pode estar
+    //      ativo mesmo que potencia_total >= 0 (consumo absorve geração)
+    //
+    // Alarme SOMENTE se todos os critérios abaixo forem verdadeiros:
+    //   • tensao > 139V  (anomalia real — base: P95 consumindo = 137V)
+    //   • potencia_total >= 0 (não está exportando)
+    //   • hora fora de 06h–16h (inversor certamente inativo)
+    //
+    // Mensagem já instrui a ação: abrir chamado na concessionária.
+    //
+    // Análise de base (30 dias de dados reais):
+    //   Consumindo P95 = 137V, máx = 139.6V (raro)
+    //   Exportando P95 = 141.3V, máx = 143.3V (normal)
+    //   Inflexão consumindo→exportando ocorre em 137–138V
+
+    const horaLocal = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Cuiaba' })
+    ).getHours();
+
+    const dentroHorarioSolar = horaLocal >= HORA_SOLAR_INICIO && horaLocal < HORA_SOLAR_FIM;
+    const exportando          = !isNaN(potTotal) && potTotal < 0;
+    const suprimirAlarme      = exportando || dentroHorarioSolar;
+
+    const msgConcessionaria = (fase, v) =>
+      `*Tensão ALTA — Fase ${fase}:* ${v}V\n` +
+      `Tensão da concessionária acima do limite (${LIMITE_TENSAO_MAX_CONSUMINDO}V).\n` +
+      `✅ Ação: abrir chamado na concessionária solicitando regularização da tensão.`;
+
+    if (!suprimirAlarme) {
+      if (!isNaN(ta) && ta > LIMITE_TENSAO_MAX_CONSUMINDO) alertas.push(msgConcessionaria('A', ta));
+      if (!isNaN(tb) && tb > LIMITE_TENSAO_MAX_CONSUMINDO) alertas.push(msgConcessionaria('B', tb));
+      if (!isNaN(tc) && tc > LIMITE_TENSAO_MAX_CONSUMINDO) alertas.push(msgConcessionaria('C', tc));
+    }
+
+    // Tensão BAIXA: sempre alarma independente do horário ou modo
+    if (!isNaN(ta) && ta < LIMITE_TENSAO_MIN && ta > 0) alertas.push(`*Fase A:* ${ta}V — Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
+    if (!isNaN(tb) && tb < LIMITE_TENSAO_MIN && tb > 0) alertas.push(`*Fase B:* ${tb}V — Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
+    if (!isNaN(tc) && tc < LIMITE_TENSAO_MIN && tc > 0) alertas.push(`*Fase C:* ${tc}V — Tensão abaixo de ${LIMITE_TENSAO_MIN}V`);
 
     // 5b. Temperatura — limite físico fixo de 45°C
     //     (independente do setpoint do termostato)
