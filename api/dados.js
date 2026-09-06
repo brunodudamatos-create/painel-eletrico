@@ -379,6 +379,11 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── 6. NOTIFICAÇÃO TELEGRAM ───────────────────────────────
+
+    let deveEnviarTelegram = false;
+    let textoMensagem      = '';
+
     const novoEstado = {
       em_alerta:          alertas.length > 0,
       primeiro_alerta_at: estadoAnterior?.primeiro_alerta_at || null,
@@ -444,4 +449,16 @@ export default async function handler(req, res) {
       banco_dados:  bancoStatus,
       diagnostico_tuya: {
         total_dps:             dpsDisponiveis.length,
-        energia_consumo_dp:    'for
+        energia_consumo_dp:    'forward_energy_total',
+        energia_geracao_dp:    energiaReversa.codigo,
+        energia_geracao_valor: energiaReversa.valor,
+        origem:                energiaReversa.origem,
+        dps_disponiveis:       dpsDisponiveis,
+      },
+    });
+
+  } catch (err) {
+    console.error('Erro /api/dados:', err);
+    return res.status(500).json({ erro: err.message });
+  }
+}
