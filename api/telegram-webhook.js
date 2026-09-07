@@ -1,8 +1,13 @@
 // =============================================================
 // api/telegram-webhook.js  —  Webhook de Comandos Telegram
-// Versão 1.0  —  06/09/2026
+// Versão 1.1  —  06/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.1 (06/09/2026)
+//     - Corrigido ETIMEDOUT: usa resposta direta HTTP no body
+//       em vez de chamada de saída para a API do Telegram
+//       O Telegram suporta método "sendMessage" no body da resposta
+//       Mensagens adicionais usam fetch como fallback
 //   v1.0 (06/09/2026)
 //     - Recebe mensagens do Telegram via webhook (POST)
 //     - Comandos suportados:
@@ -45,20 +50,44 @@ function chatAutorizado(chatId) {
 }
 
 // ── Telegram: enviar mensagem ─────────────────────────────────
+// Usa duas estratégias:
+// 1. Resposta direta no body HTTP (mais rápida, sem chamada de saída)
+//    — usada para a primeira resposta de cada requisição
+// 2. Fetch para a API do Telegram (para mensagens adicionais)
+
+let _res = null;  // referência para o objeto response da requisição atual
+let _resUsado = false;  // flag para saber se já usou a resposta direta
 
 async function responder(chatId, mensagem) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
-
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  // Tenta usar resposta direta primeiro (evita ETIMEDOUT)
+  if (_res && !_resUsado) {
+    _resUsado = true;
+    _res.status(200).json({
+      method:     'sendMessage',
       chat_id:    chatId,
       text:       mensagem,
       parse_mode: 'Markdown'
-    })
-  });
+    });
+    return;
+  }
+
+  // Fallback: chamada direta à API do Telegram
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id:    chatId,
+        text:       mensagem,
+        parse_mode: 'Markdown'
+      })
+    });
+  } catch (e) {
+    console.error('Erro ao enviar mensagem Telegram:', e.message);
+  }
 }
 
 // ── Helpers de data ───────────────────────────────────────────
@@ -270,22 +299,31 @@ async function cmdAjuda(chatId) {
 // ── Handler principal ─────────────────────────────────────────
 
 export default async function handler(req, res) {
-  // O Telegram exige resposta 200 rápida, senão retenta
-  res.status(200).json({ ok: true });
+  // Configura referência global para resposta direta (evita ETIMEDOUT)
+  _res     = res;
+  _resUsado = false;
 
-  if (req.method !== 'POST') return;
+  if (req.method !== 'POST') {
+    return res.status(200).json({ ok: true });
+  }
 
   try {
     const body    = req.body;
     const message = body?.message;
-    if (!message) return;
+
+    // Sem mensagem: responde 200 e encerra
+    if (!message) {
+      if (!_resUsado) res.status(200).json({ ok: true });
+      return;
+    }
 
     const chatId  = message?.chat?.id;
     const texto   = (message?.text || '').trim().toLowerCase();
 
-    // Ignora chats não autorizados
+    // Ignora chats não autorizados — responde 200 silencioso
     if (!chatAutorizado(chatId)) {
-      console.warn(`Chat não autorizado tentou acessar o bot: ${chatId}`);
+      console.warn(`Chat não autorizado: ${chatId}`);
+      if (!_resUsado) res.status(200).json({ ok: true });
       return;
     }
 
@@ -317,5 +355,9 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('Erro /api/telegram-webhook:', err);
+    // Garante que o Telegram sempre recebe resposta 200
+    if (!_resUsado) {
+      try { res.status(200).json({ ok: true }); } catch(e) {}
+    }
   }
 }
