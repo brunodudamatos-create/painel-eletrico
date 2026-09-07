@@ -1,8 +1,12 @@
 // =============================================================
 // api/telegram-webhook.js  —  Webhook de Comandos Telegram
-// Versão 1.1  —  06/09/2026
+// Versão 1.2  —  06/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.2 (06/09/2026)
+//     - /resumo: removida mensagem "Buscando..." — retorna o resumo
+//       completo em uma única resposta direta (evita segunda chamada
+//       de saída que causava timeout na Vercel gratuita)
 //   v1.1 (06/09/2026)
 //     - Corrigido ETIMEDOUT: usa resposta direta HTTP no body
 //       em vez de chamada de saída para a API do Telegram
@@ -336,7 +340,8 @@ export default async function handler(req, res) {
 
     // ── Roteamento de comandos ────────────────────────────────
     if (texto.startsWith('/resumo')) {
-      await responder(chatId, '⏳ Buscando dados dos últimos 7 dias...');
+      // Busca os dados primeiro, depois responde com tudo numa única mensagem
+      // (a Vercel não suporta múltiplas chamadas de saída — usamos resposta direta)
       const dados = await buscarDadosSemana(supabase);
       await responder(chatId, formatarResumo(dados));
 
