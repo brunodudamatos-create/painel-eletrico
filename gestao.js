@@ -1,5 +1,5 @@
 // ================================================================
-// gestao.js — Gestão Energética  v4.0
+// gestao.js — Gestão Energética  v4.1  —  07/09/2026
 // ================================================================
 // CORREÇÕES:
 //   1. IDs sincronizados com o gestao.html (mes-consumo-rede,
@@ -14,7 +14,10 @@
 
 'use strict';
 
-let dadosGlobais = null;
+const API_ELEKEEPER = 'https://painel-eletrico.vercel.app/api/elekeeper';
+
+let dadosGlobais  = null;
+let dadosElekeeper = null;  // cache dos dados do inversor
 let chartMensal  = null;
 let chartDiario  = null;
 let chartSaldo   = null;
@@ -122,10 +125,22 @@ function renderizarMesSelecionado(mesStr) {
   const bal = exp - con;
   setText('mes-balanco-rede', fmtKwh(bal), bal >= 0 ? '#3fb950' : '#f85149');
 
-  // Campos aguardando Elekeeper
-  setText('mes-geracao-total', 'AGUARDANDO', '#58a6ff');
-  setText('mes-consumo-solar', 'AGUARDANDO', '#58a6ff');
-  setText('mes-economia',      'AGUARDANDO', '#58a6ff');
+  // Dados do Elekeeper (inversor solar)
+  if (dadosElekeeper && dadosElekeeper.geracao_hoje_kwh !== null) {
+    const geracaoTotal  = dadosElekeeper.geracao_hoje_kwh;
+    const exp           = numero(mesObj.energia_exportada_kwh) || 0;
+    const consumoSolar  = Math.max(0, geracaoTotal - exp);
+    const tarifaKwh     = 0.899;
+    const economiaSolar = consumoSolar * tarifaKwh;
+
+    setText('mes-geracao-total', fmtKwh(geracaoTotal),  '#3fb950');
+    setText('mes-consumo-solar', fmtKwh(consumoSolar),  '#3fb950');
+    setText('mes-economia',      fmtRs(economiaSolar),  '#3fb950');
+  } else {
+    setText('mes-geracao-total', 'AGUARDANDO', '#58a6ff');
+    setText('mes-consumo-solar', 'AGUARDANDO', '#58a6ff');
+    setText('mes-economia',      'AGUARDANDO', '#58a6ff');
+  }
 
   // ── Diários do mês selecionado ──────────────────────────────
 
@@ -262,4 +277,43 @@ function opcoesGrafico() {
 
 // ── Inicialização ─────────────────────────────────────────────
 
-window.onload = carregarGestaoEnergetica;
+async function carregarElekeeper() {
+  try {
+    const res = await fetch(API_ELEKEEPER + '?_t=' + Date.now());
+    if (!res.ok) return;
+    const dados = await res.json();
+    if (dados.erro || dados.token_expirado) {
+      console.warn('Elekeeper:', dados.erro || 'token expirado');
+      return;
+    }
+    dadosElekeeper = dados;
+
+    // Atualizar card de potência instantânea do inversor
+    const potEl = document.getElementById('inversor-potencia');
+    if (potEl && dados.potencia_atual_w !== null) {
+      const kw = (dados.potencia_atual_w / 1000).toFixed(2);
+      potEl.textContent = `${kw} kW`;
+    }
+
+    // Atualizar estado do inversor
+    const stEl = document.getElementById('inversor-estado');
+    if (stEl) {
+      stEl.textContent = dados.estado || '--';
+      stEl.style.color = dados.estado === 'Normal' ? '#3fb950' : '#f85149';
+    }
+
+    // Rederendar o mês selecionado com dados do Elekeeper disponíveis
+    const sel = document.getElementById('seletorMes');
+    if (sel && dadosGlobais) renderizarMesSelecionado(sel.value);
+
+  } catch (e) {
+    console.error('Erro ao carregar Elekeeper:', e);
+  }
+}
+
+window.onload = async function() {
+  await carregarGestaoEnergetica();
+  carregarElekeeper();
+  // Atualiza Elekeeper a cada 5 minutos
+  setInterval(carregarElekeeper, 300000);
+};
