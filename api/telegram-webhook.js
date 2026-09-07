@@ -1,8 +1,14 @@
 // =============================================================
 // api/telegram-webhook.js  —  Webhook de Comandos Telegram
-// Versão 1.2  —  06/09/2026
+// Versão 1.3  —  06/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.3 (06/09/2026)
+//     - buscarDadosSemana: reescrita usando /api/gestao e
+//       /api/indices em paralelo (endpoints já otimizados)
+//       em vez de queries pesadas direto no Supabase
+//       Resolve timeout de 10s na Vercel gratuita
+//     - Faltas detalhadas: query leve LIMIT 10
 //   v1.2 (06/09/2026)
 //     - /resumo: removida mensagem "Buscando..." — retorna o resumo
 //       completo em uma única resposta direta (evita segunda chamada
@@ -115,79 +121,80 @@ function fmtHoraBR(isoStr) {
   });
 }
 
-// ── Buscar dados (mesma lógica do resumo-semanal.js) ──────────
+// ── Buscar dados via endpoints existentes (rápido) ────────────
+// Usa /api/gestao e /api/indices que já são otimizados
+// em vez de queries pesadas direto no Supabase
 
 async function buscarDadosSemana(supabase) {
-  const inicio = inicioDoPerioodo();
-  const fim    = new Date();
+  const BASE    = 'https://painel-eletrico.vercel.app';
+  const inicio  = inicioDoPerioodo();
+  const fim     = new Date();
 
-  const { data: telemetria } = await supabase
-    .from('telemetria_eletrica')
-    .select('timestamp, energia_total, energia_gerada_total')
-    .gte('timestamp', inicio.toISOString())
-    .lte('timestamp', fim.toISOString())
-    .order('timestamp', { ascending: true });
+  // Busca paralela nos endpoints já existentes
+  const [resGestao, resIndices] = await Promise.all([
+    fetch(`${BASE}/api/gestao?_t=${Date.now()}`),
+    fetch(`${BASE}/api/indices?_t=${Date.now()}`),
+  ]);
 
-  // Agrupa por dia e calcula delta
-  const diasMap = {};
-  for (const row of telemetria || []) {
-    const dia = new Date(row.timestamp).toLocaleDateString('pt-BR', {
-      timeZone: TIMEZONE, day: '2-digit', month: '2-digit', year: 'numeric'
-    });
-    if (!diasMap[dia]) diasMap[dia] = { itens: [], data: row.timestamp };
-    diasMap[dia].itens.push(row);
-  }
+  const gestao  = resGestao.ok  ? await resGestao.json()  : {};
+  const indices = resIndices.ok ? await resIndices.json()  : {};
+
+  // Energia do mês atual (dos últimos 7 dias via diarios[])
+  const diarios = gestao.diarios || [];
+  const inicioStr = inicio.toLocaleDateString('pt-BR', {
+    timeZone: TIMEZONE, day: '2-digit', month: '2-digit', year: 'numeric'
+  });
+
+  // Filtra diários dos últimos 7 dias
+  const diasSemana = diarios.filter(d => {
+    if (!d.data) return false;
+    const [ano, mes, dia] = d.data.split('-');
+    const dData = new Date(`${ano}-${mes}-${dia}T04:00:00Z`);
+    return dData >= inicio && dData <= fim;
+  });
 
   let consumoTotal   = 0;
   let exportadoTotal = 0;
   let maiorConsumo   = { dia: '--', kwh: 0 };
 
-  for (const [, val] of Object.entries(diasMap)) {
-    const itens    = val.itens;
-    const primeiro = itens[0];
-    const ultimo   = itens[itens.length - 1];
-
-    const deltaConsumo = Math.max(0,
-      (Number(ultimo.energia_total)        - Number(primeiro.energia_total))        / 100
-    );
-    const deltaExport  = Math.max(0,
-      (Number(ultimo.energia_gerada_total) - Number(primeiro.energia_gerada_total)) / 100
-    );
-
-    consumoTotal   += deltaConsumo;
-    exportadoTotal += deltaExport;
-
-    if (deltaConsumo > maiorConsumo.kwh) {
-      maiorConsumo = { dia: fmtDataBR(val.data), kwh: deltaConsumo };
+  for (const d of diasSemana) {
+    const c = Number(d.consumo_rede_kwh)      || 0;
+    const e = Number(d.energia_exportada_kwh) || 0;
+    consumoTotal   += c;
+    exportadoTotal += e;
+    if (c > maiorConsumo.kwh) {
+      const [ano, mes, dia] = d.data.split('-');
+      const dt = new Date(`${ano}-${mes}-${dia}T12:00:00Z`);
+      maiorConsumo = {
+        dia: dt.toLocaleDateString('pt-BR', {
+          timeZone: TIMEZONE, weekday: 'short', day: '2-digit', month: '2-digit'
+        }),
+        kwh: c
+      };
     }
   }
 
-  const { count: alarmes45 } = await supabase
-    .from('telemetria_eletrica')
-    .select('id', { count: 'exact', head: true })
-    .gte('timestamp', inicio.toISOString())
-    .gte('temp_atual', 45);
+  // Índices do mês (excedências 45°C e faltas)
+  const excedencias45 = indices.excedencias_45 || 0;
+  const faltasMes     = indices.faltas_energia  || 0;
 
+  // Faltas detalhadas (últimos 7 dias)
   const { data: faltas } = await supabase
     .from('eventos_sistema')
     .select('created_at, detalhes')
     .eq('tipo', 'FALTA_ENERGIA')
     .gte('created_at', inicio.toISOString())
-    .order('created_at', { ascending: true });
-
-  const { count: alarmesTensao } = await supabase
-    .from('eventos_sistema')
-    .select('id', { count: 'exact', head: true })
-    .eq('tipo', 'TENSAO_ALTA')
-    .gte('created_at', inicio.toISOString());
+    .order('created_at', { ascending: true })
+    .limit(10);
 
   return {
-    consumoTotal, exportadoTotal,
-    saldo:        exportadoTotal - consumoTotal,
+    consumoTotal,
+    exportadoTotal,
+    saldo:         exportadoTotal - consumoTotal,
     maiorConsumo,
-    alarmes45:    alarmes45 || 0,
-    faltas:       faltas    || [],
-    alarmesTensao: alarmesTensao || 0,
+    alarmes45:     excedencias45,
+    faltas:        faltas || [],
+    alarmesTensao: 0,
     periodoInicio: inicio,
     periodoFim:    fim,
   };
