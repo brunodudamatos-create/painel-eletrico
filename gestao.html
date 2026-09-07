@@ -1,3 +1,25 @@
+<!--
+=================================================================
+  gestao.html  —  Gestão Energética
+  Versão 4.1  —  07/09/2026
+=================================================================
+  HISTÓRICO DE ALTERAÇÕES:
+    v4.1 (07/09/2026)
+      - Integração com inversor solar SAJ via /api/elekeeper
+      - Aviso informativo mostra estado e potência atual do
+        inversor em tempo real (Normal/Offline + kW instantâneo)
+      - Cards Geração solar total, Consumo solar e Economia solar
+        preenchidos com dados reais do Elekeeper
+      - Atualização automática dos dados do inversor a cada 5 min
+      - gestao.js atualizado para v4.1 (?v=20260907)
+    v4.0 (set/2026)
+      - Navbar unificada com os 3 painéis
+      - Seletor de mês funcional
+      - Consumo da rede e solar exportada corretos (divisor 100)
+      - Cards AGUARDANDO: geração solar, consumo solar, economia
+      - gestao.js separado do HTML
+=================================================================
+-->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -70,11 +92,18 @@
 <main>
   <h2 id="titulo-mes" class="section-title">GESTÃO ENERGÉTICA</h2>
 
-  <div class="notice">
-    <b>Base atual:</b> medidor elétrico Tuya. O sistema já mostra corretamente o que está disponível
-    no medidor: consumo da rede e energia solar exportada. A geração solar total do inversor e o
-    consumo solar serão integrados depois via Elekeeper.
-    <span style="float:right;color:#8b949e">
+  <div class="notice" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div>
+      <b>Medidor:</b> EARU EASEM-E (Tuya) + Inversor SAJ C6-75K via Elekeeper.
+      <span style="margin-left:16px;font-size:.75rem">
+        ☀️ Inversor:
+        <span id="inversor-estado" style="font-weight:700;color:#3fb950">Carregando...</span>
+        &nbsp;|&nbsp;
+        Potência atual:
+        <span id="inversor-potencia" style="font-weight:700;color:#3fb950">-- kW</span>
+      </span>
+    </div>
+    <span style="color:#8b949e;white-space:nowrap">
       MÊS: <select id="seletorMes" style="background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:3px 8px;margin-left:4px"></select>
     </span>
   </div>
@@ -155,6 +184,6 @@
   </div>
 </main>
 
-<script src="gestao.js?v=20260905"></script>
+<script src="gestao.js?v=20260907"></script>
 </body>
 </html>
