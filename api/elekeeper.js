@@ -1,8 +1,13 @@
 // =============================================================
 // api/elekeeper.js  —  Dados do Inversor Solar SAJ Elekeeper
-// Versão 1.0  —  07/09/2026
+// Versão 1.1  —  07/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.1 (07/09/2026)
+//     - Implementado algoritmo de assinatura (x-sign) correto
+//       Fonte: biblioteca open source pysaj-elekeeper
+//       Algoritmo: sort(params) → MD5 → SHA1 → uppercase
+//       Secret: ktoKRLgQPjvNyUZO8lVc9kU1Bsip6XIe (chave do frontend)
 //   v1.0 (07/09/2026)
 //     - Endpoint para buscar dados de geração solar do inversor
 //       SAJ C6-75K-T12-LV-40 via portal Elekeeper (iop.saj-electric.com)
@@ -31,52 +36,83 @@
 //   5. Atualize ELEKEEPER_TOKEN na Vercel → Redeploy
 // =============================================================
 
-const BASE_URL  = 'https://iop.saj-electric.com/dev-api/api/v2';
-const PLANT_UID = process.env.ELEKEEPER_PLANT_UID || '2952D7851F7147278195F923618A0741';
+import crypto from 'crypto';
 
-// Headers fixos que o portal sempre envia
-function headersElekeeper(token) {
-  const agora = new Date();
-  const clientDate = agora.toISOString().split('T')[0];
+const BASE_URL          = 'https://iop.saj-electric.com/dev-api/api/v2';
+const PLANT_UID         = process.env.ELEKEEPER_PLANT_UID || '2952D7851F7147278195F923618A0741';
+const SIGNATURE_SECRET  = 'ktoKRLgQPjvNyUZO8lVc9kU1Bsip6XIe';
+const CLIENT_ID         = 'esolar-monitor-admin';
+const APP_PROJECT_NAME  = 'elekeeper';
 
-  return {
-    'Content-Type':       'application/json;charset=UTF-8',
-    'Authorization':      `Bearer ${token}`,
-    'x-app-project-name': 'elekeeper',
-    'x-client-code':      'organization',
-    'x-client-date':      clientDate,
-    'x-lang':             'pt',
-    'x-org-code':         'saj',
-    'x-theme-color':      'dark',
-    'x-timestamp':        String(Date.now()),
-    'lang':               'pt',
-    'origin':             'https://iop.saj-electric.com',
-    'referer':            'https://iop.saj-electric.com/',
-    'user-agent':         'Mozilla/5.0 (compatible; PainelBrasileira/1.0)',
-  };
+// Calcula a assinatura da requisição — mesmo algoritmo do frontend Elekeeper
+// Fonte: biblioteca pysaj-elekeeper (open source, MIT)
+// Algoritmo: sort(chaves) → "k=v&..." → MD5 → SHA1 → uppercase
+function calcularSign(params) {
+  const excluir = new Set(['confirmPassword', 'rememberMe', 'uuid']);
+  const sigParams = { ...params };
+  Object.keys(sigParams).forEach(k => { if (excluir.has(k)) delete sigParams[k]; });
+  sigParams.clientId = CLIENT_ID;
+
+  const canonical = Object.keys(sigParams)
+    .map(k => `${k}=${sigParams[k]}`)
+    .sort()
+    .join('&');
+
+  const full   = `${canonical}&key=${SIGNATURE_SECRET}`;
+  const md5hex = crypto.createHash('md5').update(full).digest('hex');
+  return crypto.createHash('sha1').update(md5hex).digest('hex').toUpperCase();
 }
 
-// Payload base para todos os endpoints
-function payloadBase() {
-  const agora = new Date();
-  return {
-    appProjectName: 'elekeeper',
+// Monta o payload com campos obrigatórios + assinatura
+function buildPayload(extra = {}) {
+  const agora      = new Date();
+  const clientDate = agora.toISOString().split('T')[0];
+  const timeStamp  = Date.now();
+  const random     = Math.random().toString(36).substring(2, 18).toUpperCase();
+
+  const base = {
+    appProjectName: APP_PROJECT_NAME,
     clientCode:     'organization',
-    clientDate:     agora.toISOString().split('T')[0],
-    clientId:       'esolar-monitor-admin',
+    clientDate,
+    clientId:       CLIENT_ID,
     lang:           'pt',
     orgCode:        'saj',
     themeColor:     'dark',
-    timeStamp:      Date.now(),
+    timeStamp,
+    random,
+    ...extra,
+  };
+
+  // Remove campos vazios (igual ao frontend)
+  const compact = Object.fromEntries(
+    Object.entries(base).filter(([, v]) => v !== null && v !== undefined && v !== '' && v !== 0)
+  );
+
+  const signature = calcularSign(compact);
+
+  return {
+    ...compact,
+    signParams: Object.keys(compact).join(','),
+    signature,
+    timeStamp,
+    clientDate,
+    random,
+  };
+}
+
+// Headers da requisição
+function headersElekeeper(token) {
+  return {
+    'Content-Type': 'application/json;charset=UTF-8',
+    'Authorization': `Bearer ${token}`,
+    'origin':  'https://iop.saj-electric.com',
+    'referer': 'https://iop.saj-electric.com/',
   };
 }
 
 // Busca fluxo de energia (potência instantânea + geração do dia)
 async function buscarFluxoEnergia(token) {
-  const payload = {
-    ...payloadBase(),
-    plantUid: PLANT_UID,
-  };
+  const payload = buildPayload({ plantUid: PLANT_UID });
 
   const res = await fetch(
     `${BASE_URL}/monitor/home/getDeviceEnergyFlowDiagram`,
@@ -96,15 +132,10 @@ async function buscarFluxoEnergia(token) {
 // Busca estatísticas da planta (geração acumulada total)
 async function buscarEstatisticasPlanta(token) {
   const hoje = new Date().toISOString().split('T')[0];
-  const payload = {
-    ...payloadBase(),
-    pageNo:          1,
-    pageSize:        10,
-    keyWordType:     '1',
-    queryDateType:   1,
-    queryStartDate:  hoje,
-    queryEndDate:    hoje,
-  };
+  const payload = buildPayload({
+    pageNo: 1, pageSize: 10, keyWordType: '1',
+    queryDateType: 1, queryStartDate: hoje, queryEndDate: hoje,
+  });
 
   const res = await fetch(
     `${BASE_URL}/monitor/plant/getPlantListStats`,
