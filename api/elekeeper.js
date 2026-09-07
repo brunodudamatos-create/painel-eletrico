@@ -1,8 +1,12 @@
 // =============================================================
 // api/elekeeper.js  —  Dados do Inversor Solar SAJ Elekeeper
-// Versão 1.1  —  07/09/2026
+// Versão 1.2  —  07/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.2 (07/09/2026)
+//     - Removida assinatura do body: iop.saj-electric.com (v2)
+//       não exige signature no payload — só o JWT no header
+//       Payload simplificado igual ao capturado no DevTools
 //   v1.1 (07/09/2026)
 //     - Implementado algoritmo de assinatura (x-sign) correto
 //       Fonte: biblioteca open source pysaj-elekeeper
@@ -63,14 +67,13 @@ function calcularSign(params) {
   return crypto.createHash('sha1').update(md5hex).digest('hex').toUpperCase();
 }
 
-// Monta o payload com campos obrigatórios + assinatura
+// Payload exato que o portal iop.saj-electric.com envia
+// (capturado via DevTools — sem campo signature no body)
 function buildPayload(extra = {}) {
   const agora      = new Date();
   const clientDate = agora.toISOString().split('T')[0];
-  const timeStamp  = Date.now();
-  const random     = Math.random().toString(36).substring(2, 18).toUpperCase();
 
-  const base = {
+  return {
     appProjectName: APP_PROJECT_NAME,
     clientCode:     'organization',
     clientDate,
@@ -78,25 +81,8 @@ function buildPayload(extra = {}) {
     lang:           'pt',
     orgCode:        'saj',
     themeColor:     'dark',
-    timeStamp,
-    random,
+    timeStamp:      Date.now(),
     ...extra,
-  };
-
-  // Remove campos vazios (igual ao frontend)
-  const compact = Object.fromEntries(
-    Object.entries(base).filter(([, v]) => v !== null && v !== undefined && v !== '' && v !== 0)
-  );
-
-  const signature = calcularSign(compact);
-
-  return {
-    ...compact,
-    signParams: Object.keys(compact).join(','),
-    signature,
-    timeStamp,
-    clientDate,
-    random,
   };
 }
 
