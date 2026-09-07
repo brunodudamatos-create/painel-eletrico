@@ -1,8 +1,12 @@
 // =============================================================
 // api/telegram-webhook.js  —  Webhook de Comandos Telegram
-// Versão 1.3  —  06/09/2026
+// Versão 1.4  —  06/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.4 (06/09/2026)
+//     - /start: mensagem de boas-vindas personalizada com nome
+//       da pessoa, apresentação do sistema e lista de comandos
+//     - /ajuda e /start separados — cada um com sua mensagem
 //   v1.3 (06/09/2026)
 //     - buscarDadosSemana: reescrita usando /api/gestao e
 //       /api/indices em paralelo (endpoints já otimizados)
@@ -290,6 +294,45 @@ async function cmdStatus(supabase, chatId) {
 
 // ── Comando /ajuda ────────────────────────────────────────────
 
+async function cmdBoasVindas(chatId, nome) {
+  const saudacao = nome ? `Olá, ${nome}! 👋` : 'Olá! 👋';
+  const msg =
+    `${saudacao}
+
+` +
+    `Bem-vindo ao bot de monitoramento elétrico da
+` +
+    `*Brasileira Distribuidora de Frutas*.
+
+` +
+    `Aqui você acompanha em tempo real:
+` +
+    `⚡ Tensões e correntes das 3 fases
+` +
+    `🌡️ Temperatura do painel elétrico
+` +
+    `🔋 Consumo e geração solar
+` +
+    `⚠️ Alertas automáticos de anomalias
+
+` +
+    `*Comandos disponíveis:*
+
+` +
+    `📊 /resumo — Resumo dos últimos 7 dias
+` +
+    `📡 /status — Status atual do sistema
+` +
+    `❓ /ajuda  — Lista os comandos
+
+` +
+    `_O resumo semanal é enviado automaticamente
+` +
+    `todo sábado entre 17h e 19h (horário de Cuiabá)._`;
+
+  return responder(chatId, msg);
+}
+
 async function cmdAjuda(chatId) {
   const msg =
     `🤖 *BOT — Brasileira Distribuidora*\n\n` +
@@ -355,7 +398,10 @@ export default async function handler(req, res) {
     } else if (texto.startsWith('/status')) {
       await cmdStatus(supabase, chatId);
 
-    } else if (texto.startsWith('/ajuda') || texto.startsWith('/start') || texto.startsWith('/help')) {
+    } else if (texto.startsWith('/start')) {
+      await cmdBoasVindas(chatId, message?.from?.first_name);
+
+    } else if (texto.startsWith('/ajuda') || texto.startsWith('/help')) {
       await cmdAjuda(chatId);
 
     } else if (texto) {
