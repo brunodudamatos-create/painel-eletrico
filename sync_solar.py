@@ -1,8 +1,16 @@
 # =============================================================
 # sync_solar.py  —  Coleta dados do inversor SAJ via Elekeeper
-# Versão 2.0  —  09/09/2026
+# Versão 2.2  —  09/09/2026
 # =============================================================
 # HISTÓRICO:
+#   v2.2 (09/09/2026)
+#     - Login corrigido: usa form-encoded (data=) em vez de JSON
+#       A biblioteca pysaj-elekeeper usa data= no POST de login
+#       Servidor rejeita JSON com errCode 10003 "loginType null"
+#   v2.1 (09/09/2026)
+#     - Login: removido sign_only_common=True, assina payload completo
+#     - loginType e rememberMe enviados como string (igual ao browser)
+#     - Corrige errCode 10003: "Login type can't be null"
 #   v2.0 (09/09/2026)
 #     - Chaves JSON confirmadas com dados reais capturados pelo DevTools
 #     - Login via iop.saj-electric.com/dev-api/api/v1/sys/login
@@ -227,15 +235,21 @@ class ElekeeperClient:
           - data["result"]["token"]
           - data["result"] (string direta)
         """
+        # Login: assina o payload completo (não só common fields)
+        # O iop.saj-electric.com exige loginType no corpo assinado
         payload = sign_params({
             "username":   SAJ_USER,
             "password":   encrypt_password(SAJ_PASS),
-            "rememberMe": False,
-            "loginType":  1,
-        }, sign_only_common=True)
+            "rememberMe": "false",   # string como o browser envia
+            "loginType":  "1",       # string como o browser envia
+        })
 
         url  = f"{BASE_URL_V1}/sys/login"
-        resp = self.session.post(url, json=payload, timeout=30)
+        # Login usa form-encoded (data=), não JSON (json=)
+        # A biblioteca pysaj-elekeeper usa data= no POST de login
+        resp = self.session.post(url, data=payload, timeout=30,
+                                 headers={**self.session.headers,
+                                          'Content-Type': 'application/x-www-form-urlencoded'})
 
         if resp.status_code not in (200, 201):
             raise Exception(f"Login HTTP {resp.status_code}: {resp.text[:300]}")
