@@ -1,8 +1,12 @@
 // =============================================================
 // api/telegram-webhook.js  —  Webhook de Comandos Telegram
-// Versão 1.4  —  06/09/2026
+// Versão 1.5  —  09/09/2026
 // =============================================================
 // HISTÓRICO DE ALTERAÇÕES:
+//   v1.5 (09/09/2026)
+//     - /status: mostra alertas ativos com texto e horário
+//       Se sistema normal: "✅ Sistema operando normalmente"
+//       Se alerta ativo: lista os alertas com hora de início
 //   v1.4 (06/09/2026)
 //     - /start: mensagem de boas-vindas personalizada com nome
 //       da pessoa, apresentação do sistema e lista de comandos
@@ -261,22 +265,49 @@ function formatarResumo(dados) {
 // ── Comando /status ───────────────────────────────────────────
 
 async function cmdStatus(supabase, chatId) {
-  const { data } = await supabase
-    .from('telemetria_eletrica')
-    .select('timestamp, tensao_a, tensao_b, tensao_c, potencia_total, temp_atual')
-    .order('id', { ascending: false })
-    .limit(1);
+  // Busca última telemetria E estado de alarme em paralelo
+  const [{ data }, { data: alarme }] = await Promise.all([
+    supabase
+      .from('telemetria_eletrica')
+      .select('timestamp, tensao_a, tensao_b, tensao_c, potencia_total, temp_atual')
+      .order('id', { ascending: false })
+      .limit(1),
+    supabase
+      .from('status_alarmes')
+      .select('em_alerta, texto_alertas, primeiro_alerta_at')
+      .eq('id', 'painel_brasileira')
+      .maybeSingle(),
+  ]);
 
   if (!data || data.length === 0) {
     return responder(chatId, '⚠️ Sem dados recentes no banco.');
   }
 
-  const u       = data[0];
-  const horaBR  = fmtHoraBR(u.timestamp);
-  const dataBR  = fmtDataBR(u.timestamp);
-  const modo    = Number(u.potencia_total) < 0
+  const u      = data[0];
+  const horaBR = fmtHoraBR(u.timestamp);
+  const dataBR = fmtDataBR(u.timestamp);
+  const modo   = Number(u.potencia_total) < 0
     ? '🟢 Injetando na rede'
     : '🔴 Consumindo da rede';
+
+  // Bloco de status de alarme
+  let blocoAlarme = '';
+  if (alarme?.em_alerta && alarme?.texto_alertas) {
+    const desde = alarme.primeiro_alerta_at
+      ? fmtHoraBR(alarme.primeiro_alerta_at)
+      : '--';
+    const alertasLimpos = alarme.texto_alertas
+      .replace(/\*/g, '')
+      .split('\n')
+      .filter(Boolean)
+      .map(l => `  ⚠️ ${l}`)
+      .join('\n');
+    blocoAlarme =
+      `\n\n🚨 *ALERTAS ATIVOS* (desde ${desde})\n` +
+      alertasLimpos;
+  } else {
+    blocoAlarme = '\n\n✅ *Sistema operando normalmente*';
+  }
 
   const msg =
     `📡 *STATUS ATUAL*\n` +
@@ -287,7 +318,8 @@ async function cmdStatus(supabase, chatId) {
     `  Fase C: *${u.tensao_c}V*\n\n` +
     `⚡ *Potência total:* ${Number(u.potencia_total).toLocaleString('pt-BR')}W\n` +
     `  ${modo}\n\n` +
-    `🌡️ *Temperatura painel:* ${u.temp_atual !== null ? u.temp_atual + '°C' : '--'}`;
+    `🌡️ *Temperatura painel:* ${u.temp_atual !== null ? u.temp_atual + '°C' : '--'}` +
+    blocoAlarme;
 
   return responder(chatId, msg);
 }
