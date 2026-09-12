@@ -1,8 +1,13 @@
 # =============================================================
 # sync_solar.py  —  Coleta dados do inversor SAJ via Elekeeper
-# Versão 2.2  —  09/09/2026
+# Versão 2.3  —  09/09/2026
 # =============================================================
 # HISTÓRICO:
+#   v2.3 (09/09/2026)
+#     - Extração do token corrigida para estrutura real do iop:
+#       data.tokenValue (campo principal) com fallbacks para
+#       data.token, data.accessToken, data.originToken
+#       Filtra tokens vazios ("" ou "null")
 #   v2.2 (09/09/2026)
 #     - Login corrigido: usa form-encoded (data=) em vez de JSON
 #       A biblioteca pysaj-elekeeper usa data= no POST de login
@@ -259,27 +264,48 @@ class ElekeeperClient:
         if data.get("connOk") is False:
             raise Exception(f"Login recusado: {data.get('errMsg')}")
 
-        # Extrair token — tenta todas as localizações possíveis
+        # Extrair token — estrutura real do iop.saj-electric.com:
+        # {"data": {"expiresIn": 259200, "originToken": "...", 
+        #            "refreshToken": "...", "tokenValue": "...",
+        #            "tokenName": "Authorization"}, "errCode": 0}
         token = None
 
-        # 1. Cookie (mais comum no iop)
-        token = token or resp.cookies.get("Authorization") or resp.cookies.get("token")
+        # 1. data.tokenValue (campo principal do iop v2)
+        data_obj = data.get("data") or {}
+        if isinstance(data_obj, dict):
+            token = (data_obj.get("tokenValue") or
+                     data_obj.get("token") or
+                     data_obj.get("accessToken") or
+                     data_obj.get("access_token") or
+                     data_obj.get("originToken") or
+                     data_obj.get("refreshToken"))
+            # Filtrar tokens vazios
+            if token == "" or token == "null":
+                token = None
 
-        # 2. Header Authorization
-        auth_header = resp.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = token or auth_header.replace("Bearer ", "")
+        # 2. result direto (formato antigo eop)
+        if not token:
+            result = data.get("result")
+            if isinstance(result, dict):
+                token = (result.get("token") or
+                         result.get("tokenValue") or
+                         result.get("access_token"))
+            elif isinstance(result, str) and len(result) > 20:
+                token = result
 
-        # 3. Body — result.token ou result.access_token
-        result = data.get("result")
-        if isinstance(result, dict):
-            token = token or result.get("token") or result.get("access_token")
-        elif isinstance(result, str) and len(result) > 20:
-            token = token or result
+        # 3. Cookie
+        if not token:
+            token = resp.cookies.get("Authorization") or resp.cookies.get("token")
+
+        # 4. Header Authorization
+        if not token:
+            auth_header = resp.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "")
 
         if not token:
             raise Exception(
-                f"Token não encontrado. Resposta: {json.dumps(data)[:400]}\n"
+                f"Token não encontrado. Resposta completa: {json.dumps(data)}\n"
                 f"Cookies: {dict(resp.cookies)}\n"
                 f"Headers: {dict(resp.headers)}"
             )
