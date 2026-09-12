@@ -1,8 +1,18 @@
 # =============================================================
 # sync_solar.py  —  Coleta dados do inversor SAJ via Elekeeper
-# Versão 2.6  —  09/09/2026
+# Versão 2.8  —  09/09/2026
 # =============================================================
 # HISTÓRICO:
+#   v2.8 (09/09/2026)
+#     - CORREÇÃO CRÍTICA baseada no código fonte pysaj-elekeeper v0.0.10:
+#       Content-Type: form-urlencoded em TODOS os endpoints (não JSON)
+#       enableSign: false — x-sign NÃO é necessário
+#       data= em todos os POSTs (não json=)
+#       Isso corrige errCode 10001 nos endpoints autenticados
+#   v2.7 (09/09/2026)
+#     - Supabase: substituído supabase-py por REST API direta
+#       Resolve [Errno -2] Name or service not known no GitHub Actions
+#       Usa requests (já instalado) + apikey header
 #   v2.6 (09/09/2026)
 #     - Headers obrigatórios adicionados (confirmados pelo DevTools):
 #       x-app-project-name, x-client-code, x-org-code, x-lang,
@@ -62,11 +72,8 @@ except ImportError:
     print("ERRO: instale pycryptodome: pip install pycryptodome")
     sys.exit(1)
 
-try:
-    from supabase import create_client
-except ImportError:
-    print("ERRO: instale supabase: pip install supabase")
-    sys.exit(1)
+# Supabase via REST API direta (mais confiável que supabase-py no GitHub Actions)
+# Não precisa de biblioteca externa — usa requests que já está instalado
 
 
 # ── Constantes do Elekeeper ────────────────────────────────────
@@ -194,35 +201,26 @@ class ElekeeperClient:
     def __init__(self):
         self.session = requests.Session()
         self.token   = None
+        # Headers confirmados pelo código fonte da biblioteca pysaj-elekeeper v0.0.10
+        # Content-Type é form-urlencoded em TODOS os endpoints (não JSON)
+        # enableSign: false — x-sign NÃO é necessário
         self.session.headers.update({
-            "Content-Type":       "application/json;charset=UTF-8",
-            "Accept":             "application/json, text/plain, */*",
-            "Accept-Language":    "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-            "origin":             "https://iop.saj-electric.com",
-            "referer":            "https://iop.saj-electric.com/",
-            "User-Agent":         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                   "Chrome/152.0.0.0 Safari/537.36",
-            # Headers obrigatórios confirmados pelo DevTools
-            "x-app-project-name": "elekeeper",
-            "x-client-code":      "organization",
-            "x-org-code":         "saj",
-            "x-lang":             "pt",
-            "x-theme-color":      "dark",
-            "content-language":   "zh_CN",
+            "Content-Type":    "application/x-www-form-urlencoded;charset=UTF-8",
+            "Content-Language": "zh_CN",
+            "enableSign":      "false",
+            "lang":            "pt",
         })
 
     def _post(self, base: str, endpoint: str, payload: dict) -> dict:
         """POST autenticado com tratamento completo de erros."""
         url = f"{base}{endpoint}"
+        headers = dict(self.session.headers)
         if self.token:
-            self.session.headers["Authorization"] = f"Bearer {self.token}"
-        # Atualizar headers dinâmicos a cada requisição
-        self.session.headers["x-client-date"] = date.today().isoformat()
-        self.session.headers["x-timestamp"]   = str(timestamp_ms())
+            headers["Authorization"] = f"Bearer {self.token}"
 
         try:
-            resp = self.session.post(url, json=payload, timeout=30)
+            # data= envia como form-urlencoded (obrigatório para iop.saj-electric.com)
+            resp = self.session.post(url, data=payload, headers=headers, timeout=30)
         except requests.Timeout:
             raise Exception(f"Timeout ao chamar {endpoint}")
         except requests.ConnectionError as e:
@@ -273,11 +271,8 @@ class ElekeeperClient:
         })
 
         url  = f"{BASE_URL_V1}/sys/login"
-        # Login usa form-encoded (data=), não JSON (json=)
-        # A biblioteca pysaj-elekeeper usa data= no POST de login
-        resp = self.session.post(url, data=payload, timeout=30,
-                                 headers={**self.session.headers,
-                                          'Content-Type': 'application/x-www-form-urlencoded'})
+        headers = dict(self.session.headers)
+        resp = self.session.post(url, data=payload, headers=headers, timeout=30)
 
         if resp.status_code not in (200, 201):
             raise Exception(f"Login HTTP {resp.status_code}: {resp.text[:300]}")
@@ -370,23 +365,8 @@ class ElekeeperClient:
 # ── Gravar no Supabase ─────────────────────────────────────────
 
 def gravar_supabase(flow: dict, stats: dict) -> None:
-    """
-    Grava os dados coletados na tabela solar_geracao do Supabase.
+    """Grava dados na tabela solar_geracao via REST API do Supabase."""
 
-    Mapeamento de chaves (confirmado pelos dados reais do DevTools):
-      potencia_atual_w  ← flow['totalPvPower']      (W, float)
-      geracao_hoje_kwh  ← flow['todayPvEnergy']      (kWh, float)
-      geracao_total_kwh ← stats['cumulativeEnergy']  (kWh, float/str)
-      estado            ← flow['runningStateName']   (str)
-      estado_cod        ← flow['runningState']       (int)
-      potencia_sistema_kw ← flow['systemPower']      (kW, float)
-      atualizado_em     ← flow['updateDate']         (str)
-      raw_flow          ← dict completo (JSONB)
-      raw_stats         ← dict completo (JSONB)
-    """
-    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-    # Converter cumulativeEnergy de str para float com segurança
     total_kwh = None
     cum = stats.get("cumulativeEnergy")
     if cum is not None:
@@ -408,22 +388,27 @@ def gravar_supabase(flow: dict, stats: dict) -> None:
         "raw_flow":            flow,
         "raw_stats":           stats,
     }
+    registro_limpo = {k: v for k, v in registro.items() if v is not None}
 
-    # Remove None para não gravar nulos desnecessários
-    registro_limpo = {k: v for k, v in registro.items()
-                      if v is not None and k not in ("raw_flow", "raw_stats")}
-    # raw_* sempre grava (mesmo que vazio, para auditoria)
-    registro_limpo["raw_flow"]  = flow
-    registro_limpo["raw_stats"] = stats
+    # REST API direta — mais confiável que supabase-py no GitHub Actions
+    url = f"{SUPABASE_URL}/rest/v1/solar_geracao"
+    headers = {
+        "apikey":        SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type":  "application/json",
+        "Prefer":        "return=minimal",
+    }
+    resp = requests.post(url, json=registro_limpo, headers=headers, timeout=30)
 
-    result = sb.table("solar_geracao").insert(registro_limpo).execute()
+    if resp.status_code not in (200, 201):
+        raise Exception(f"Supabase HTTP {resp.status_code}: {resp.text[:200]}")
 
     print(
         f"✅ Supabase OK — "
-        f"Potência: {registro['potencia_atual_w']}W | "
-        f"Hoje: {registro['geracao_hoje_kwh']} kWh | "
-        f"Total: {registro['geracao_total_kwh']} kWh | "
-        f"Estado: {registro['estado']}"
+        f"Potência: {registro.get('potencia_atual_w')}W | "
+        f"Hoje: {registro.get('geracao_hoje_kwh')} kWh | "
+        f"Total: {total_kwh} kWh | "
+        f"Estado: {registro.get('estado')}"
     )
 
 
