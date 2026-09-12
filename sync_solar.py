@@ -1,8 +1,15 @@
 # =============================================================
 # sync_solar.py  —  Coleta dados do inversor SAJ via Elekeeper
-# Versão 2.5  —  09/09/2026
+# Versão 2.6  —  09/09/2026
 # =============================================================
 # HISTÓRICO:
+#   v2.6 (09/09/2026)
+#     - Headers obrigatórios adicionados (confirmados pelo DevTools):
+#       x-app-project-name, x-client-code, x-org-code, x-lang,
+#       x-theme-color, content-language, x-client-date, x-timestamp
+#       Esses headers são exigidos pelos endpoints v2 autenticados
+#     - Erro Supabase isolado: falha DNS não interrompe mais o loop
+#       Verifica se SUPABASE_URL/KEY estão nos Secrets do GitHub
 #   v2.5 (09/09/2026)
 #     - Adicionado log da resposta completa dos endpoints
 #       para diagnosticar por que retorna vazio durante o dia
@@ -188,14 +195,21 @@ class ElekeeperClient:
         self.session = requests.Session()
         self.token   = None
         self.session.headers.update({
-            "Content-Type":  "application/json;charset=UTF-8",
-            "Accept":        "application/json, text/plain, */*",
-            "origin":        "https://iop.saj-electric.com",
-            "referer":       "https://iop.saj-electric.com/",
-            "User-Agent":    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                             "AppleWebKit/537.36 (KHTML, like Gecko) "
-                             "Chrome/152.0.0.0 Safari/537.36",
-            "Accept-Language": "pt-BR,pt;q=0.9",
+            "Content-Type":       "application/json;charset=UTF-8",
+            "Accept":             "application/json, text/plain, */*",
+            "Accept-Language":    "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "origin":             "https://iop.saj-electric.com",
+            "referer":            "https://iop.saj-electric.com/",
+            "User-Agent":         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                   "Chrome/152.0.0.0 Safari/537.36",
+            # Headers obrigatórios confirmados pelo DevTools
+            "x-app-project-name": "elekeeper",
+            "x-client-code":      "organization",
+            "x-org-code":         "saj",
+            "x-lang":             "pt",
+            "x-theme-color":      "dark",
+            "content-language":   "zh_CN",
         })
 
     def _post(self, base: str, endpoint: str, payload: dict) -> dict:
@@ -203,6 +217,9 @@ class ElekeeperClient:
         url = f"{base}{endpoint}"
         if self.token:
             self.session.headers["Authorization"] = f"Bearer {self.token}"
+        # Atualizar headers dinâmicos a cada requisição
+        self.session.headers["x-client-date"] = date.today().isoformat()
+        self.session.headers["x-timestamp"]   = str(timestamp_ms())
 
         try:
             resp = self.session.post(url, json=payload, timeout=30)
@@ -447,9 +464,13 @@ def main():
             print(f"☀️  Estado:          {flow.get('runningStateName', '--')}")
             print(f"☀️  Última leitura:  {flow.get('updateDate', '--')}")
 
-            gravar_supabase(flow, stats)
-            print(f"\n✅ Concluído com sucesso!")
-            return  # Sai do loop se tudo deu certo
+            try:
+                gravar_supabase(flow, stats)
+                print(f"\n✅ Concluído com sucesso!")
+            except Exception as db_err:
+                print(f"\n⚠️  Dados coletados mas erro ao gravar no Supabase: {db_err}")
+                print("   Verifique se SUPABASE_URL e SUPABASE_KEY estão nos Secrets do GitHub")
+            return  # Sai do loop — coleta foi bem-sucedida
 
         except Exception as e:
             print(f"\n❌ Erro na tentativa {tentativa}: {e}")
