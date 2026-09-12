@@ -1,9 +1,23 @@
 <!--
 =================================================================
   index.html  —  Painel Elétrico Principal
-  Versão 4.10  —  06/09/2026
+  Versão 4.11  —  09/09/2026
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
+    v4.11 (09/09/2026)
+      - Mobile bug 1: botões 12h/24h/36h e select empilhados
+        em coluna — não se amontoam mais em tela pequena
+      - Mobile bug 2: fonte dos dados elétricos aumentada
+        (.mn .mv) para leitura confortável no celular
+      - Mobile bug 3: stats min/méd/máx movidos para baixo
+        do gráfico — não sobrepõem mais o conteúdo
+      - Potência Total: removido "W" duplicado, adicionado
+        indicador de modo (consumindo/injetando da rede)
+      - Energia do Mês: removido "kWh" duplicado
+    v4.10 (06/09/2026)
+      - Cache key com versão do endpoint (v1.1)
+    v4.9 (06/09/2026)
+      - Seletor de período longo nos 4 gráficos
     v4.7 (
     v4.5 (06/09/2026)
       - Energia por fase: substituída por aplicarEnergiaPorFase()
@@ -181,6 +195,30 @@
     .totais{grid-template-columns:repeat(2,1fr)}
     .navbar{padding:0 12px;gap:10px}
     .navbar-brand span{display:none}
+
+    /* Bug 1: botões de período — empilha título e botões */
+    .stitle{flex-direction:column;align-items:flex-start;gap:8px}
+    .stitle-left{width:100%}
+    .stitle-left::after{display:none}
+    .chart-btns{display:flex;flex-wrap:wrap;gap:4px;width:100%}
+    .c-btn{flex:1;min-width:38px;text-align:center;font-size:.72rem;padding:5px 4px}
+    .period-select{flex:2;font-size:.72rem;height:28px}
+
+    /* Bug 2: fonte pequena nos dados elétricos */
+    .mn{font-size:.9rem}
+    .mv{font-size:1.15rem}
+    .mu{font-size:.78rem}
+    .ftit{font-size:1rem}
+    .tnome{font-size:.85rem}
+    .tval{font-size:1.8rem}
+    .tunit{font-size:.78rem}
+
+    /* Bug 3: stats min/méd/máx sobre o gráfico → move para baixo */
+    .chart-stats{position:static!important;display:flex;flex-wrap:wrap;
+      gap:6px;margin-top:6px;justify-content:flex-start}
+    .chart-stat{font-size:.7rem;padding:3px 8px}
+    .chart-stat span{font-size:.78rem}
+    .chart-container{position:relative;height:210px}
   }
 </style>
 </head>
@@ -331,14 +369,13 @@
       <div class="tnome">Potência Total</div>
       <div class="tnome-sub">(demanda instantânea)</div>
       <div class="tval" id="ptotal">--</div>
-      <div class="tunit">W</div>
+      <div id="ptotal-modo" style="font-size:.72rem;font-weight:600;color:#8b949e;margin-top:3px">--</div>
     </div>
     <div class="tc">
       <div class="tico">🔋</div>
       <div class="tnome">Energia do Mês</div>
       <div class="tnome-sub">(consumo da rede)</div>
       <div class="tval" id="etotal">--</div>
-      <div class="tunit">kWh</div>
     </div>
     <div class="tc">
       <div class="tico">⚡</div>
@@ -777,6 +814,16 @@ function render(d) {
     setHTML('fpc', `${fmt(el.fat_pot_c, 2)}`);
 
     setVal('ptotal', el.potencia_total, 0, 'W');
+    // Modo: consumindo ou injetando na rede
+    const modoEl = document.getElementById('ptotal-modo');
+    if (modoEl) {
+      const pt = parseFloat(el.potencia_total);
+      if (!isNaN(pt)) {
+        if (pt < 0) { modoEl.textContent = '(injetando na rede)'; modoEl.style.color = '#3fb950'; }
+        else if (pt > 0) { modoEl.textContent = '(consumindo da rede)'; modoEl.style.color = '#f85149'; }
+        else { modoEl.textContent = '(neutro)'; modoEl.style.color = '#8b949e'; }
+      }
+    }
 
     // Guarda valores brutos de energia e recalcula delta por fase
     energiaAtual.a = el.energia_a !== null ? Number(el.energia_a) : null;
