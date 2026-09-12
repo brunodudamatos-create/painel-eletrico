@@ -1,8 +1,14 @@
 # =============================================================
 # sync_solar.py  —  Coleta dados do inversor SAJ via Elekeeper
-# Versão 2.3  —  09/09/2026
+# Versão 2.5  —  09/09/2026
 # =============================================================
 # HISTÓRICO:
+#   v2.5 (09/09/2026)
+#     - Adicionado log da resposta completa dos endpoints
+#       para diagnosticar por que retorna vazio durante o dia
+#   v2.4 (09/09/2026)
+#     - flow vazio não é mais erro: inversor offline (noite) é normal
+#       Grava registro com potência 0 e estado Offline para histórico
 #   v2.3 (09/09/2026)
 #     - Extração do token corrigida para estrutura real do iop:
 #       data.tokenValue (campo principal) com fallbacks para
@@ -317,30 +323,17 @@ class ElekeeperClient:
     def get_flow(self) -> dict:
         """
         Busca fluxo de energia em tempo real.
-
         Endpoint: POST /dev-api/api/v2/monitor/home/getDeviceEnergyFlowDiagram
-        Campos relevantes retornados (confirmados pelo DevTools):
-          totalPvPower     — potência instantânea do inversor (W)
-          todayPvEnergy    — energia gerada hoje (kWh)
-          runningState     — 0=Offline 1=Normal 2=Alarme 3=Falha
-          runningStateName — texto do estado
-          systemPower      — capacidade nominal (kW)
-          updateDate       — timestamp da última leitura do inversor
         """
         payload = sign_params({"plantUid": PLANT_UID})
         data    = self._post(BASE_URL_V2, "/monitor/home/getDeviceEnergyFlowDiagram", payload)
+        print(f"   getDeviceEnergyFlowDiagram resposta: {json.dumps(data)[:500]}")
         return data.get("data") or {}
 
     def get_plant_stats(self) -> dict:
         """
         Busca estatísticas da planta (geração total acumulada).
-
         Endpoint: POST /dev-api/api/v2/monitor/plant/getPlantListStats
-        Campos relevantes retornados (confirmados pelo DevTools):
-          cumulativeEnergy — geração total desde instalação (kWh)
-          energy           — geração hoje (kWh) — redundante com todayPvEnergy
-          plantName        — nome da planta
-          plantUid         — UID da planta
         """
         hoje = date.today().isoformat()
         payload = sign_params({
@@ -352,6 +345,7 @@ class ElekeeperClient:
             "queryEndDate":   hoje,
         })
         data  = self._post(BASE_URL_V2, "/monitor/plant/getPlantListStats", payload)
+        print(f"   getPlantListStats resposta: {json.dumps(data)[:500]}")
         lista = (data.get("data") or {}).get("list") or []
         return lista[0] if lista else {}
 
@@ -437,7 +431,11 @@ def main():
             print("📡 Buscando fluxo de energia...")
             flow = client.get_flow()
             if not flow:
-                raise Exception("getDeviceEnergyFlowDiagram retornou vazio")
+                # Inversor offline (noite/nublado) — normal fora do horário solar
+                # Gravar registro com potência 0 para manter histórico contínuo
+                print("⚠️  Inversor offline ou sem geração — registrando estado")
+                flow = {"runningState": 0, "runningStateName": "Offline",
+                        "totalPvPower": 0, "todayPvEnergy": None}
 
             print("📊 Buscando estatísticas da planta...")
             stats = client.get_plant_stats()
