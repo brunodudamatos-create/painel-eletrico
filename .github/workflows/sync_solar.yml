@@ -1,434 +1,84 @@
 # =============================================================
-# sync_solar.py  —  Coleta dados do inversor SAJ via Elekeeper
+# .github/workflows/sync_solar.yml
 # Versão 2.1  —  09/09/2026
 # =============================================================
-# HISTÓRICO:
-#   v2.1 (09/09/2026)
-#     - Login: removido sign_only_common=True, assina payload completo
-#     - loginType e rememberMe enviados como string (igual ao browser)
-#     - Corrige errCode 10003: "Login type can't be null"
-#   v2.0 (09/09/2026)
-#     - Chaves JSON confirmadas com dados reais capturados pelo DevTools
-#     - Login via iop.saj-electric.com/dev-api/api/v1/sys/login
-#     - Coleta via iop.saj-electric.com/dev-api/api/v2/...
-#     - AES-128-ECB para senha + MD5+SHA1 para assinatura
-#     - raw_flow e raw_stats gravados em JSONB para auditoria
-#     - Retry automático em caso de falha no login ou coleta
-#     - Todos os campos com .get() + default — sem KeyError
+# Executa sync_solar.py a cada 10 minutos no horário solar
+# de Cuiabá (06h-18h = 10h-22h UTC, pois Cuiabá é GMT-4)
 #
-# VARIÁVEIS DE AMBIENTE (GitHub Secrets):
-#   SAJ_USER      — email do Elekeeper
-#   SAJ_PASS      — senha em texto puro (script criptografa com AES)
+# HISTÓRICO DE ALTERAÇÕES:
+#   v2.1 (09/09/2026)
+#     - Removido cache: 'pip' que exigia requirements.txt no repo
+#       causava erro: "No file matched to **/requirements.txt"
+#   v2.0 (09/09/2026)
+#     - Versão inicial com agendamento e workflow_dispatch
+#
+# ONDE VER O BOTÃO MANUAL:
+#   GitHub → aba "Actions" (menu superior) →
+#   "Sync Solar SAJ" (aparece na lista à esquerda) →
+#   botão "Run workflow" (canto superior direito da tela)
+#
+# POR QUE A ABA ACTIONS ESTÁ VAZIA AGORA:
+#   O GitHub só mostra workflows na aba Actions DEPOIS que o
+#   arquivo .yml é commitado em .github/workflows/. Após o
+#   primeiro commit, a aba Actions mostra o workflow e o
+#   botão "Run workflow" aparece para execução manual.
+#
+# SECRETS NECESSÁRIOS:
+#   GitHub → Settings → Secrets and variables → Actions
+#   → New repository secret → adicionar cada um abaixo:
+#
+#   SAJ_USER      — email de login no Elekeeper
+#   SAJ_PASS      — senha do Elekeeper (texto puro)
 #   SUPABASE_URL  — URL do projeto Supabase
 #   SUPABASE_KEY  — chave service role do Supabase
-#   SAJ_PLANT_UID — UID da planta (opcional, tem default)
+#   SAJ_PLANT_UID — 2952D7851F7147278195F923618A0741
 # =============================================================
 
-import os
-import sys
-import json
-import time
-import hashlib
-import random
-import requests
-from datetime import date, datetime
-
-try:
-    from Crypto.Cipher import AES
-    from Crypto.Util.Padding import pad
-except ImportError:
-    print("ERRO: instale pycryptodome: pip install pycryptodome")
-    sys.exit(1)
-
-try:
-    from supabase import create_client
-except ImportError:
-    print("ERRO: instale supabase: pip install supabase")
-    sys.exit(1)
-
-
-# ── Constantes do Elekeeper ────────────────────────────────────
-# Extraídas da biblioteca open-source pysaj-elekeeper (MIT)
-# e validadas contra o portal iop.saj-electric.com
-
-BASE_URL_V1       = "https://iop.saj-electric.com/dev-api/api/v1"
-BASE_URL_V2       = "https://iop.saj-electric.com/dev-api/api/v2"
-APP_PROJECT_NAME  = "elekeeper"
-CLIENT_ID         = "esolar-monitor-admin"
-SIGNATURE_SECRET  = "ktoKRLgQPjvNyUZO8lVc9kU1Bsip6XIe"
-PASSWORD_AES_KEY  = bytes.fromhex("ec1840a7c53cf0709eb784be480379b6")
-RANDOM_ALPHABET   = "ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678"
-
-# Estados do inversor
-ESTADOS = {0: "Offline", 1: "Normal", 2: "Alarme", 3: "Falha"}
-
-
-# ── Credenciais (somente via variáveis de ambiente) ────────────
-def get_env(name: str) -> str:
-    val = os.environ.get(name)
-    if not val:
-        print(f"ERRO: variável de ambiente '{name}' não definida.")
-        sys.exit(1)
-    return val
-
-SAJ_USER     = get_env("SAJ_USER")
-SAJ_PASS     = get_env("SAJ_PASS")
-SUPABASE_URL = get_env("SUPABASE_URL")
-SUPABASE_KEY = get_env("SUPABASE_KEY")
-PLANT_UID    = os.environ.get("SAJ_PLANT_UID", "2952D7851F7147278195F923618A0741")
-
-
-# ── Funções de criptografia ────────────────────────────────────
-
-def encrypt_password(password: str) -> str:
-    """
-    Criptografa a senha com AES-128-ECB + PKCS7 padding.
-    Mesmo algoritmo do frontend Elekeeper (chave: ec1840a7c53cf0709eb784be480379b6).
-    Retorna hex string.
-    """
-    cipher = AES.new(PASSWORD_AES_KEY, AES.MODE_ECB)
-    padded = pad(password.encode("utf-8"), AES.block_size)
-    return cipher.encrypt(padded).hex()
-
-
-def random_token(length: int = 32) -> str:
-    """Gera o campo 'random' da requisição usando o alfabeto do Elekeeper."""
-    return "".join(random.choice(RANDOM_ALPHABET) for _ in range(length))
-
-
-def timestamp_ms() -> int:
-    """Timestamp em milissegundos (campo timeStamp das requisições)."""
-    return int(time.time() * 1000)
-
-
-def sign_params(params: dict, sign_only_common: bool = False) -> dict:
-    """
-    Monta e assina o payload da requisição.
-
-    Algoritmo (extraído do crypto.py da pysaj-elekeeper):
-      1. Une params + common fields (appProjectName, clientDate, etc.)
-      2. Remove campos vazios (None, "", [], {})
-      3. Ordena as chaves alfabeticamente → "k1=v1&k2=v2&..."
-      4. Concatena "&key=SECRET"
-      5. MD5 do resultado
-      6. SHA1 do MD5 → uppercase = assinatura final (campo 'signature')
-
-    O campo 'signParams' lista as chaves que foram assinadas (para o servidor validar).
-    """
-    ts    = timestamp_ms()
-    rand  = random_token()
-    today = date.today().isoformat()
-
-    common = {
-        "appProjectName": APP_PROJECT_NAME,
-        "clientDate":     today,
-        "lang":           "pt",
-        "timeStamp":      ts,
-        "random":         rand,
-    }
-
-    # Remove campos vazios — o frontend faz isso antes de assinar
-    def is_empty(v):
-        return v is None or v == "" or v == [] or v == {}
-
-    merged = {k: v for k, v in {**params, **common}.items() if not is_empty(v)}
-
-    # Fonte da assinatura: só common fields (login) ou payload completo (demais)
-    sig_src = dict(common if sign_only_common else merged)
-    sig_src.pop("confirmPassword", None)
-    sig_src.pop("rememberMe",      None)
-    sig_src.pop("uuid",            None)
-    sig_src["clientId"] = CLIENT_ID
-
-    # Ordenar e concatenar
-    canonical = "&".join(sorted(f"{k}={v}" for k, v in sig_src.items()))
-    full_str  = f"{canonical}&key={SIGNATURE_SECRET}"
-
-    # MD5 → SHA1 → uppercase
-    md5_hex   = hashlib.md5(full_str.encode(), usedforsecurity=False).hexdigest()
-    signature = hashlib.sha1(md5_hex.encode("utf-8"), usedforsecurity=False).hexdigest().upper()
-
-    return {
-        **merged,
-        # Campos obrigatórios em TODAS as requisições
-        "appProjectName": APP_PROJECT_NAME,
-        "clientId":       CLIENT_ID,
-        "clientCode":     "organization",
-        "orgCode":        "saj",
-        "themeColor":     "dark",
-        "signParams":     ",".join(sig_src.keys()),
-        "signature":      signature,
-        "timeStamp":      ts,
-        "clientDate":     today,
-        "random":         rand,
-    }
-
-
-# ── Cliente Elekeeper ──────────────────────────────────────────
-
-class ElekeeperClient:
-    """Cliente HTTP para o portal iop.saj-electric.com."""
-
-    def __init__(self):
-        self.session = requests.Session()
-        self.token   = None
-        self.session.headers.update({
-            "Content-Type":  "application/json;charset=UTF-8",
-            "Accept":        "application/json, text/plain, */*",
-            "origin":        "https://iop.saj-electric.com",
-            "referer":       "https://iop.saj-electric.com/",
-            "User-Agent":    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                             "AppleWebKit/537.36 (KHTML, like Gecko) "
-                             "Chrome/152.0.0.0 Safari/537.36",
-            "Accept-Language": "pt-BR,pt;q=0.9",
-        })
-
-    def _post(self, base: str, endpoint: str, payload: dict) -> dict:
-        """POST autenticado com tratamento completo de erros."""
-        url = f"{base}{endpoint}"
-        if self.token:
-            self.session.headers["Authorization"] = f"Bearer {self.token}"
-
-        try:
-            resp = self.session.post(url, json=payload, timeout=30)
-        except requests.Timeout:
-            raise Exception(f"Timeout ao chamar {endpoint}")
-        except requests.ConnectionError as e:
-            raise Exception(f"Erro de conexão em {endpoint}: {e}")
-
-        if resp.status_code == 401:
-            raise Exception(f"Token expirado ou inválido (401) em {endpoint}")
-        if resp.status_code != 200:
-            raise Exception(f"HTTP {resp.status_code} em {endpoint}: {resp.text[:200]}")
-
-        try:
-            data = resp.json()
-        except Exception:
-            raise Exception(f"Resposta não é JSON em {endpoint}: {resp.text[:200]}")
-
-        # Verificar campo connOk (padrão do Elekeeper)
-        conn_ok = data.get("connOk")
-        if conn_ok is False:
-            err = data.get("errMsg") or data.get("fallbackMsg") or "Erro desconhecido"
-            raise Exception(f"Elekeeper recusou {endpoint}: {err}")
-
-        return data
-
-    def login(self) -> None:
-        """
-        Faz login no Elekeeper e armazena o JWT.
-
-        Endpoint: POST /dev-api/api/v1/sys/login
-        Payload:
-          - username: email do usuário
-          - password: senha criptografada com AES-128-ECB
-          - rememberMe: false
-          - loginType: 1
-
-        O token pode estar em:
-          - resp.cookies["Authorization"]  (mais comum no iop)
-          - resp.headers["Authorization"]
-          - data["result"]["token"]
-          - data["result"] (string direta)
-        """
-        # Login: assina o payload completo (não só common fields)
-        # O iop.saj-electric.com exige loginType no corpo assinado
-        payload = sign_params({
-            "username":   SAJ_USER,
-            "password":   encrypt_password(SAJ_PASS),
-            "rememberMe": "false",   # string como o browser envia
-            "loginType":  "1",       # string como o browser envia
-        })
-
-        url  = f"{BASE_URL_V1}/sys/login"
-        resp = self.session.post(url, json=payload, timeout=30)
-
-        if resp.status_code not in (200, 201):
-            raise Exception(f"Login HTTP {resp.status_code}: {resp.text[:300]}")
-
-        data = resp.json()
-
-        if data.get("connOk") is False:
-            raise Exception(f"Login recusado: {data.get('errMsg')}")
-
-        # Extrair token — tenta todas as localizações possíveis
-        token = None
-
-        # 1. Cookie (mais comum no iop)
-        token = token or resp.cookies.get("Authorization") or resp.cookies.get("token")
-
-        # 2. Header Authorization
-        auth_header = resp.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = token or auth_header.replace("Bearer ", "")
-
-        # 3. Body — result.token ou result.access_token
-        result = data.get("result")
-        if isinstance(result, dict):
-            token = token or result.get("token") or result.get("access_token")
-        elif isinstance(result, str) and len(result) > 20:
-            token = token or result
-
-        if not token:
-            raise Exception(
-                f"Token não encontrado. Resposta: {json.dumps(data)[:400]}\n"
-                f"Cookies: {dict(resp.cookies)}\n"
-                f"Headers: {dict(resp.headers)}"
-            )
-
-        self.token = token
-        self.session.headers["Authorization"] = f"Bearer {token}"
-        print(f"✅ Login OK — token obtido ({token[:30]}...)")
-
-    def get_flow(self) -> dict:
-        """
-        Busca fluxo de energia em tempo real.
-
-        Endpoint: POST /dev-api/api/v2/monitor/home/getDeviceEnergyFlowDiagram
-        Campos relevantes retornados (confirmados pelo DevTools):
-          totalPvPower     — potência instantânea do inversor (W)
-          todayPvEnergy    — energia gerada hoje (kWh)
-          runningState     — 0=Offline 1=Normal 2=Alarme 3=Falha
-          runningStateName — texto do estado
-          systemPower      — capacidade nominal (kW)
-          updateDate       — timestamp da última leitura do inversor
-        """
-        payload = sign_params({"plantUid": PLANT_UID})
-        data    = self._post(BASE_URL_V2, "/monitor/home/getDeviceEnergyFlowDiagram", payload)
-        return data.get("data") or {}
-
-    def get_plant_stats(self) -> dict:
-        """
-        Busca estatísticas da planta (geração total acumulada).
-
-        Endpoint: POST /dev-api/api/v2/monitor/plant/getPlantListStats
-        Campos relevantes retornados (confirmados pelo DevTools):
-          cumulativeEnergy — geração total desde instalação (kWh)
-          energy           — geração hoje (kWh) — redundante com todayPvEnergy
-          plantName        — nome da planta
-          plantUid         — UID da planta
-        """
-        hoje = date.today().isoformat()
-        payload = sign_params({
-            "pageNo":         1,
-            "pageSize":       10,
-            "keyWordType":    "1",
-            "queryDateType":  1,
-            "queryStartDate": hoje,
-            "queryEndDate":   hoje,
-        })
-        data  = self._post(BASE_URL_V2, "/monitor/plant/getPlantListStats", payload)
-        lista = (data.get("data") or {}).get("list") or []
-        return lista[0] if lista else {}
-
-
-# ── Gravar no Supabase ─────────────────────────────────────────
-
-def gravar_supabase(flow: dict, stats: dict) -> None:
-    """
-    Grava os dados coletados na tabela solar_geracao do Supabase.
-
-    Mapeamento de chaves (confirmado pelos dados reais do DevTools):
-      potencia_atual_w  ← flow['totalPvPower']      (W, float)
-      geracao_hoje_kwh  ← flow['todayPvEnergy']      (kWh, float)
-      geracao_total_kwh ← stats['cumulativeEnergy']  (kWh, float/str)
-      estado            ← flow['runningStateName']   (str)
-      estado_cod        ← flow['runningState']       (int)
-      potencia_sistema_kw ← flow['systemPower']      (kW, float)
-      atualizado_em     ← flow['updateDate']         (str)
-      raw_flow          ← dict completo (JSONB)
-      raw_stats         ← dict completo (JSONB)
-    """
-    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-    # Converter cumulativeEnergy de str para float com segurança
-    total_kwh = None
-    cum = stats.get("cumulativeEnergy")
-    if cum is not None:
-        try:
-            total_kwh = float(cum)
-        except (ValueError, TypeError):
-            total_kwh = None
-
-    registro = {
-        "plant_uid":           PLANT_UID,
-        "potencia_atual_w":    flow.get("totalPvPower"),
-        "geracao_hoje_kwh":    flow.get("todayPvEnergy"),
-        "geracao_total_kwh":   total_kwh,
-        "estado":              flow.get("runningStateName") or
-                               ESTADOS.get(flow.get("runningState", 0), "Desconhecido"),
-        "estado_cod":          flow.get("runningState"),
-        "potencia_sistema_kw": flow.get("systemPower"),
-        "atualizado_em":       flow.get("updateDate"),
-        "raw_flow":            flow,
-        "raw_stats":           stats,
-    }
-
-    # Remove None para não gravar nulos desnecessários
-    registro_limpo = {k: v for k, v in registro.items()
-                      if v is not None and k not in ("raw_flow", "raw_stats")}
-    # raw_* sempre grava (mesmo que vazio, para auditoria)
-    registro_limpo["raw_flow"]  = flow
-    registro_limpo["raw_stats"] = stats
-
-    result = sb.table("solar_geracao").insert(registro_limpo).execute()
-
-    print(
-        f"✅ Supabase OK — "
-        f"Potência: {registro['potencia_atual_w']}W | "
-        f"Hoje: {registro['geracao_hoje_kwh']} kWh | "
-        f"Total: {registro['geracao_total_kwh']} kWh | "
-        f"Estado: {registro['estado']}"
-    )
-
-
-# ── Main com retry ─────────────────────────────────────────────
-
-def main():
-    print(f"\n{'='*60}")
-    print(f"☀️  Sync Solar SAJ — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"{'='*60}")
-    print(f"   Portal:    iop.saj-electric.com")
-    print(f"   Planta:    {PLANT_UID}")
-    print(f"   Usuário:   {SAJ_USER}")
-
-    max_tentativas = 3
-    for tentativa in range(1, max_tentativas + 1):
-        try:
-            print(f"\n🔄 Tentativa {tentativa}/{max_tentativas}")
-
-            client = ElekeeperClient()
-            client.login()
-
-            print("📡 Buscando fluxo de energia...")
-            flow = client.get_flow()
-            if not flow:
-                raise Exception("getDeviceEnergyFlowDiagram retornou vazio")
-
-            print("📊 Buscando estatísticas da planta...")
-            stats = client.get_plant_stats()
-            # stats pode ser vazio em alguns horários — não é erro crítico
-
-            print(f"\n☀️  Potência atual:  {flow.get('totalPvPower', '--')} W")
-            print(f"☀️  Geração hoje:    {flow.get('todayPvEnergy', '--')} kWh")
-            print(f"☀️  Total acumulado: {stats.get('cumulativeEnergy', '--')} kWh")
-            print(f"☀️  Estado:          {flow.get('runningStateName', '--')}")
-            print(f"☀️  Última leitura:  {flow.get('updateDate', '--')}")
-
-            gravar_supabase(flow, stats)
-            print(f"\n✅ Concluído com sucesso!")
-            return  # Sai do loop se tudo deu certo
-
-        except Exception as e:
-            print(f"\n❌ Erro na tentativa {tentativa}: {e}")
-            if tentativa < max_tentativas:
-                espera = tentativa * 15  # 15s, 30s entre tentativas
-                print(f"⏳ Aguardando {espera}s antes de tentar novamente...")
-                time.sleep(espera)
-            else:
-                print(f"\n💥 Todas as {max_tentativas} tentativas falharam.")
-                sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+name: Sync Solar SAJ
+
+on:
+  # ── Agendamento automático ──────────────────────────────────
+  # A cada 10 minutos entre 10:00 e 21:50 UTC
+  # = 06:00 e 17:50 horário de Cuiabá (GMT-4)
+  # Cobre o horário solar do inversor (06h-18h Cuiabá)
+  schedule:
+    - cron: '0,10,20,30,40,50 10-21 * * *'
+
+  # ── Botão manual ────────────────────────────────────────────
+  # Aparece em: GitHub → Actions → Sync Solar SAJ → Run workflow
+  # Útil para testar sem esperar o agendamento
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Coletar dados do inversor SAJ
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # 1. Baixar o código do repositório
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      # 2. Configurar Python 3.11
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Instalar dependências
+      - name: Instalar dependências
+        run: |
+          pip install --upgrade pip
+          pip install requests pycryptodome supabase
+
+      # 4. Executar o script de coleta
+      - name: Executar sync_solar.py
+        env:
+          SAJ_USER:      ${{ secrets.SAJ_USER }}
+          SAJ_PASS:      ${{ secrets.SAJ_PASS }}
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          SAJ_PLANT_UID: ${{ secrets.SAJ_PLANT_UID }}
+        run: |
+          python sync_solar.py
