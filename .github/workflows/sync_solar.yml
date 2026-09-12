@@ -1,0 +1,78 @@
+# =============================================================
+# .github/workflows/sync_solar.yml
+# Versão 2.0  —  09/09/2026
+# =============================================================
+# Executa sync_solar.py a cada 10 minutos no horário solar
+# de Cuiabá (06h-18h = 10h-22h UTC, pois Cuiabá é GMT-4)
+#
+# ONDE VER O BOTÃO MANUAL:
+#   GitHub → aba "Actions" (menu superior) →
+#   "Sync Solar SAJ" (aparece na lista à esquerda) →
+#   botão "Run workflow" (canto superior direito da tela)
+#
+# POR QUE A ABA ACTIONS ESTÁ VAZIA AGORA:
+#   O GitHub só mostra workflows na aba Actions DEPOIS que o
+#   arquivo .yml é commitado em .github/workflows/. Após o
+#   primeiro commit, a aba Actions mostra o workflow e o
+#   botão "Run workflow" aparece para execução manual.
+#
+# SECRETS NECESSÁRIOS:
+#   GitHub → Settings → Secrets and variables → Actions
+#   → New repository secret → adicionar cada um abaixo:
+#
+#   SAJ_USER      — email de login no Elekeeper
+#   SAJ_PASS      — senha do Elekeeper (texto puro)
+#   SUPABASE_URL  — URL do projeto Supabase
+#   SUPABASE_KEY  — chave service role do Supabase
+#   SAJ_PLANT_UID — 2952D7851F7147278195F923618A0741
+# =============================================================
+
+name: Sync Solar SAJ
+
+on:
+  # ── Agendamento automático ──────────────────────────────────
+  # A cada 10 minutos entre 10:00 e 21:50 UTC
+  # = 06:00 e 17:50 horário de Cuiabá (GMT-4)
+  # Cobre o horário solar do inversor (06h-18h Cuiabá)
+  schedule:
+    - cron: '0,10,20,30,40,50 10-21 * * *'
+
+  # ── Botão manual ────────────────────────────────────────────
+  # Aparece em: GitHub → Actions → Sync Solar SAJ → Run workflow
+  # Útil para testar sem esperar o agendamento
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Coletar dados do inversor SAJ
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # 1. Baixar o código do repositório
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      # 2. Configurar Python 3.11
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 3. Instalar dependências
+      - name: Instalar dependências
+        run: |
+          pip install --upgrade pip
+          pip install requests pycryptodome supabase
+
+      # 4. Executar o script de coleta
+      - name: Executar sync_solar.py
+        env:
+          SAJ_USER:      ${{ secrets.SAJ_USER }}
+          SAJ_PASS:      ${{ secrets.SAJ_PASS }}
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          SAJ_PLANT_UID: ${{ secrets.SAJ_PLANT_UID }}
+        run: |
+          python sync_solar.py
