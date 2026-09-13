@@ -1,8 +1,19 @@
 // =============================================================
 // api/inversor.js  —  Status do Inversor Solar (via cache Supabase)
-// Versão 1.0  —  13/09/2026
+// Versão 1.1  —  13/09/2026
 // =============================================================
 // HISTÓRICO:
+//   v1.1 (13/09/2026)
+//     - Adicionado campo coletado_em (= created_at, com fuso
+//       horário explícito) para o front-end calcular com segurança
+//       "há quanto tempo foi a última leitura". O campo
+//       atualizado_em (texto puro reportado pelo SAJ, sem fuso)
+//       continua existindo, mas só como informação complementar —
+//       não deve ser usado para cálculo de tempo decorrido.
+//       MOTIVO: o robô só coleta das 6h às ~17h50 (horário de
+//       Cuiabá). Fora desse período, o valor mostrado no painel
+//       fica "congelado" na última leitura — sem esse campo, não
+//       dava pra saber se o número era ao vivo ou de horas atrás.
 //   v1.0 (13/09/2026)
 //     - SUBSTITUI api/elekeeper.js (removido nesta mesma versão).
 //     - MOTIVO DA TROCA: elekeeper.js chamava o SAJ ao vivo toda vez
@@ -78,7 +89,8 @@ export default async function handler(req, res) {
       geracao_hoje_kwh:  data.geracao_hoje_kwh,
       geracao_total_kwh: data.geracao_total_kwh,
       estado:            data.estado,
-      atualizado_em:     data.atualizado_em || data.created_at,
+      atualizado_em:     data.atualizado_em || data.created_at,  // horário reportado pelo SAJ (texto puro, informativo)
+      coletado_em:       data.created_at,                        // horário com fuso horário explícito — usar este para calcular "há quanto tempo"
       fonte: 'solar_geracao (cache, atualizado a cada 10 min pelo GitHub Actions)',
     });
 
