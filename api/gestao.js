@@ -1,5 +1,5 @@
 // =============================================================
-// api/gestao.js  —  Gestão Energética  v5.1
+// api/gestao.js  —  Gestão Energética  v5.2
 // =============================================================
 //
 // CORREÇÃO PRINCIPAL — DIVISOR:
@@ -18,6 +18,15 @@
 // COMPATIBILIDADE COM O FRONTEND:
 //   Retorna todos os dias em diarios[] e todos os meses em mensais[]
 //   sem exigir parâmetros na URL.
+//
+// v5.2 (13/09/2026) — PERFORMANCE: busca paginada em paralelo:
+//   A tabela telemetria_eletrica já tem 30 mil+ linhas. A busca
+//   antiga pegava 1000 linhas por vez, uma espera atrás da outra
+//   (~32 idas e vindas sequenciais ao Supabase) — deixando a tela
+//   de gestão lenta, e piorando conforme a tabela cresce. Agora
+//   busca o total de linhas primeiro, depois dispara todas as
+//   páginas ao mesmo tempo (Promise.all). Mesmos dados, muito
+//   mais rápido. Reportado pelo usuário: "está demorando muito".
 //
 // v5.1 (13/09/2026) — CORREÇÃO DO MÉTODO DE CÁLCULO SOLAR:
 //   O método de delta acumulado (v5.0) subestimava a geração do dia
@@ -113,6 +122,51 @@ function calcularDelta(inicio, final) {
   return delta >= 0 ? delta : 0;
 }
 
+// ── Busca paginada EM PARALELO ─────────────────────────────────
+// v5.2: antes, cada página era buscada uma de cada vez (32 idas e
+// vindas sequenciais para 31 mil linhas — cada uma esperando a
+// anterior terminar). Isso deixava a tela de gestão lenta e só
+// pioraria com o tempo, conforme a tabela cresce.
+// Agora: descobre o total de linhas com 1 consulta rápida (count),
+// depois dispara TODAS as páginas ao mesmo tempo com Promise.all.
+// Mesmos dados, mesmo filtro — só a ordem de chegada muda.
+
+async function buscarTudoPaginadoParalelo(supabase, tabela, colunas, colunaFiltro, colunaOrdenar) {
+  const { count, error: erroContagem } = await supabase
+    .from(tabela)
+    .select('*', { count: 'exact', head: true })
+    .not(colunaFiltro, 'is', null);
+
+  if (erroContagem) throw new Error(erroContagem.message);
+
+  const total = count || 0;
+  if (total === 0) return [];
+
+  const totalPaginas = Math.ceil(total / PAGE_SIZE);
+  const promessas = [];
+
+  for (let pagina = 0; pagina < totalPaginas; pagina++) {
+    const inicio = pagina * PAGE_SIZE;
+    promessas.push(
+      supabase
+        .from(tabela)
+        .select(colunas)
+        .not(colunaFiltro, 'is', null)
+        .order(colunaOrdenar, { ascending: true })
+        .range(inicio, inicio + PAGE_SIZE - 1)
+    );
+  }
+
+  const resultados = await Promise.all(promessas);
+
+  let tudo = [];
+  for (const r of resultados) {
+    if (r.error) throw new Error(r.error.message);
+    tudo.push(...(r.data || []));
+  }
+  return tudo;
+}
+
 // ── Lógica diária solar (tabela solar_geracao) ────────────────
 // v5.1: NÃO usa mais delta acumulado. O SAJ já entrega pronto, em
 // cada leitura, o campo geracao_hoje_kwh — o total do dia inteiro,
@@ -186,29 +240,19 @@ export default async function handler(req, res) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ── Busca paginada de todos os registros ──────────────────
+    // ── Busca paginada (em paralelo) de todos os registros ────
     // Seleciona apenas as 4 colunas necessárias para minimizar
     // tráfego e custo de leitura no Supabase.
 
-    let leituras = [];
-    let offset   = 0;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from('telemetria_eletrica')
-        .select('timestamp, created_at, energia_total, energia_gerada_total')
-        .not('energia_total', 'is', null)
-        .order('timestamp', { ascending: true })
-        .range(offset, offset + PAGE_SIZE - 1);
-
-      if (error) {
-        return res.status(500).json({ erro: 'Erro no Supabase: ' + error.message });
-      }
-
-      if (!data || data.length === 0) break;
-      leituras.push(...data);
-      if (data.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
+    let leituras;
+    try {
+      leituras = await buscarTudoPaginadoParalelo(
+        supabase, 'telemetria_eletrica',
+        'timestamp, created_at, energia_total, energia_gerada_total',
+        'energia_total', 'timestamp'
+      );
+    } catch (fetchErr) {
+      return res.status(500).json({ erro: 'Erro no Supabase: ' + fetchErr.message });
     }
 
     // ── Normaliza timestamps ──────────────────────────────────
@@ -259,23 +303,11 @@ export default async function handler(req, res) {
     // continua funcionando normalmente, só a parte solar fica null.
 
     try {
-      let leiturasSolares = [];
-      let offsetSolar = 0;
-
-      while (true) {
-        const { data, error } = await supabase
-          .from('solar_geracao')
-          .select('created_at, geracao_hoje_kwh')
-          .not('geracao_hoje_kwh', 'is', null)
-          .order('created_at', { ascending: true })
-          .range(offsetSolar, offsetSolar + PAGE_SIZE - 1);
-
-        if (error) throw new Error(error.message);
-        if (!data || data.length === 0) break;
-        leiturasSolares.push(...data);
-        if (data.length < PAGE_SIZE) break;
-        offsetSolar += PAGE_SIZE;
-      }
+      const leiturasSolares = await buscarTudoPaginadoParalelo(
+        supabase, 'solar_geracao',
+        'created_at, geracao_hoje_kwh',
+        'geracao_hoje_kwh', 'created_at'
+      );
 
       // ── Passo 1: geração solar do dia = geracao_hoje_kwh da
       // leitura mais recente daquele dia (já vem pronto do SAJ) ──
