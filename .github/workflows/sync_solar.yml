@@ -1,11 +1,21 @@
 # =============================================================
 # .github/workflows/sync_solar.yml
-# Versão 2.1  —  09/09/2026
+# Versão 2.2  —  13/09/2026
 # =============================================================
 # Executa sync_solar.py a cada 10 minutos no horário solar
 # de Cuiabá (06h-18h = 10h-22h UTC, pois Cuiabá é GMT-4)
 #
 # HISTÓRICO DE ALTERAÇÕES:
+#   v2.2 (13/09/2026)
+#     - Minutos do cron trocados de 0,10,20,30,40,50 para
+#       3,13,23,33,43,53. MOTIVO: minutos "redondos" são os mais
+#       usados por agendamentos do mundo inteiro, então o GitHub
+#       enfileira/descarta mais runs nesses horários por alta
+#       carga (documentado oficialmente: "high load times include
+#       the start of every hour... queued jobs may be dropped").
+#       Confirmado na prática em 13/09/2026: entre 17:59 e 19:34 UTC
+#       deveriam ter rodado ~9 execuções e só rodaram 2. Deslocar
+#       os minutos reduz a concorrência com esses horários lotados.
 #   v2.1 (09/09/2026)
 #     - Removido cache: 'pip' que exigia requirements.txt no repo
 #       causava erro: "No file matched to **/requirements.txt"
@@ -22,6 +32,16 @@
 #   arquivo .yml é commitado em .github/workflows/. Após o
 #   primeiro commit, a aba Actions mostra o workflow e o
 #   botão "Run workflow" aparece para execução manual.
+#
+# IMPORTANTE — LIMITAÇÃO CONHECIDA DO GITHUB:
+#   Agendamentos (schedule/cron) do GitHub Actions NÃO têm hora
+#   garantida — é "melhor esforço", podem atrasar ou ser descartados
+#   em picos de carga, mesmo com os minutos deslocados. Para este
+#   painel (acompanhamento de geração solar), isso é baixo risco:
+#   perder uma leitura ocasional só deixa um furo pequeno no
+#   gráfico. Se no futuro precisar de horário garantido, a
+#   alternativa é um serviço externo (ex: cron-job.org) chamando
+#   a API workflow_dispatch do GitHub.
 #
 # SECRETS NECESSÁRIOS:
 #   GitHub → Settings → Secrets and variables → Actions
@@ -41,8 +61,10 @@ on:
   # A cada 10 minutos entre 10:00 e 21:50 UTC
   # = 06:00 e 17:50 horário de Cuiabá (GMT-4)
   # Cobre o horário solar do inversor (06h-18h Cuiabá)
+  # Minutos deslocados (3,13,23...) para fugir do pico de carga
+  # que acontece nos minutos redondos — ver histórico v2.2 acima.
   schedule:
-    - cron: '0,10,20,30,40,50 10-21 * * *'
+    - cron: '3,13,23,33,43,53 10-21 * * *'
 
   # ── Botão manual ────────────────────────────────────────────
   # Aparece em: GitHub → Actions → Sync Solar SAJ → Run workflow
