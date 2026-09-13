@@ -1,5 +1,5 @@
 // =============================================================
-// api/gestao.js  —  Gestão Energética  v5.2
+// api/gestao.js  —  Gestão Energética  v5.3
 // =============================================================
 //
 // CORREÇÃO PRINCIPAL — DIVISOR:
@@ -18,6 +18,23 @@
 // COMPATIBILIDADE COM O FRONTEND:
 //   Retorna todos os dias em diarios[] e todos os meses em mensais[]
 //   sem exigir parâmetros na URL.
+//
+// v5.3 (13/09/2026) — BUG CORRIGIDO: numero(null) virava 0:
+//   Descoberto testando esta função contra uma versão em SQL, com
+//   dados sintéticos incluindo leituras nulas (que acontecem de
+//   verdade — dpShadow() em dados.js já retorna null quando o
+//   medidor Tuya não manda um campo numa leitura específica).
+//   Em JavaScript, Number(null) = 0 (não é erro nem NaN!), e como
+//   0 passava no teste "Number.isFinite", uma leitura NULA virava
+//   uma leitura "zero" válida — se calhasse de ser a última leitura
+//   do dia, zerava o dia inteiro; se fosse a primeira, inflava o
+//   dia. O dados.js já tinha a função numero() escrita CORRETAMENTE
+//   (com guarda explícita pra null/undefined/''), só não tinha sido
+//   copiada pro api/gestao.js quando ele foi escrito.
+//   Validado: 45 dias de dados sintéticos com leituras nulas
+//   propositais, comparando resultado do JavaScript corrigido
+//   contra uma função SQL equivalente rodando num Postgres de
+//   teste — bateram 100%, em todos os dias e meses, após a correção.
 //
 // v5.2 (13/09/2026) — PERFORMANCE: busca paginada em paralelo:
 //   A tabela telemetria_eletrica já tem 30 mil+ linhas. A busca
@@ -65,6 +82,7 @@ const PAGE_SIZE   = 1000;
 // ── Helpers numéricos ─────────────────────────────────────────
 
 function numero(v) {
+  if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
