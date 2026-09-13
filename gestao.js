@@ -1,23 +1,35 @@
 // ================================================================
-// gestao.js — Gestão Energética  v4.1  —  07/09/2026
+// gestao.js — Gestão Energética  v5.0  —  13/09/2026
 // ================================================================
-// CORREÇÕES:
-//   1. IDs sincronizados com o gestao.html (mes-consumo-rede,
-//      mes-exportacao, mes-balanco-rede, mes-custo-rede, etc.)
-//   2. Divisor 100 no gestao.js (API) para converter unidades
-//      brutas do EARU em kWh — confirmado via query do Supabase:
-//      delta agosto 1.007.162 ÷ 100 = 10.071 kWh ≈ 10.111 kWh app
-//   3. Cards "hoje-saldo", "semana-saldo", "semana-consumo"
-//      populados corretamente
-//   4. JS completamente separado do HTML
+// HISTÓRICO:
+//   v5.0 (13/09/2026)
+//     - Cards solares (geração/consumo/economia) agora vêm PRONTOS
+//       de /api/gestao (calculados lá com dados mensais reais da
+//       tabela solar_geracao). Removida a gambiarra que usava só o
+//       valor de "hoje" do inversor como se fosse o mês inteiro —
+//       era por isso que os cards ficavam presos em "AGUARDANDO"
+//       sempre que a chamada ao inversor falhava.
+//     - Widget de status do inversor (topo da tela) trocou de
+//       /api/elekeeper (quebrado, dependia de token manual) para
+//       /api/inversor (lê o cache já atualizado no Supabase).
+//     - Variável renomeada: API_ELEKEEPER → API_INVERSOR.
+//   v4.1 (07/09/2026)
+//     - IDs sincronizados com o gestao.html (mes-consumo-rede,
+//       mes-exportacao, mes-balanco-rede, mes-custo-rede, etc.)
+//     - Divisor 100 no gestao.js (API) para converter unidades
+//       brutas do EARU em kWh — confirmado via query do Supabase:
+//       delta agosto 1.007.162 ÷ 100 = 10.071 kWh ≈ 10.111 kWh app
+//     - Cards "hoje-saldo", "semana-saldo", "semana-consumo"
+//       populados corretamente
+//     - JS completamente separado do HTML
 // ================================================================
 
 'use strict';
 
-const API_ELEKEEPER = 'https://painel-eletrico.vercel.app/api/elekeeper';
+const API_INVERSOR = '/api/inversor';
 
 let dadosGlobais  = null;
-let dadosElekeeper = null;  // cache dos dados do inversor
+let dadosInversor = null;  // cache da última leitura do inversor (via Supabase)
 let chartMensal  = null;
 let chartDiario  = null;
 let chartSaldo   = null;
@@ -125,17 +137,11 @@ function renderizarMesSelecionado(mesStr) {
   const bal = exp - con;
   setText('mes-balanco-rede', fmtKwh(bal), bal >= 0 ? '#3fb950' : '#f85149');
 
-  // Dados do Elekeeper (inversor solar)
-  if (dadosElekeeper && dadosElekeeper.geracao_hoje_kwh !== null) {
-    const geracaoTotal  = dadosElekeeper.geracao_hoje_kwh;
-    const exp           = numero(mesObj.energia_exportada_kwh) || 0;
-    const consumoSolar  = Math.max(0, geracaoTotal - exp);
-    const tarifaKwh     = 0.899;
-    const economiaSolar = consumoSolar * tarifaKwh;
-
-    setText('mes-geracao-total', fmtKwh(geracaoTotal),  '#3fb950');
-    setText('mes-consumo-solar', fmtKwh(consumoSolar),  '#3fb950');
-    setText('mes-economia',      fmtRs(economiaSolar),  '#3fb950');
+  // Dados solares — já vêm calculados de /api/gestao (tabela solar_geracao)
+  if (mesObj.geracao_solar_kwh !== null && mesObj.geracao_solar_kwh !== undefined) {
+    setText('mes-geracao-total', fmtKwh(mesObj.geracao_solar_kwh),  '#3fb950');
+    setText('mes-consumo-solar', fmtKwh(mesObj.consumo_solar_kwh),  '#3fb950');
+    setText('mes-economia',      fmtRs(mesObj.economia_rs),         '#3fb950');
   } else {
     setText('mes-geracao-total', 'AGUARDANDO', '#58a6ff');
     setText('mes-consumo-solar', 'AGUARDANDO', '#58a6ff');
@@ -277,16 +283,16 @@ function opcoesGrafico() {
 
 // ── Inicialização ─────────────────────────────────────────────
 
-async function carregarElekeeper() {
+async function carregarInversor() {
   try {
-    const res = await fetch(API_ELEKEEPER + '?_t=' + Date.now());
+    const res = await fetch(API_INVERSOR + '?_t=' + Date.now());
     if (!res.ok) return;
     const dados = await res.json();
-    if (dados.erro || dados.token_expirado) {
-      console.warn('Elekeeper:', dados.erro || 'token expirado');
+    if (dados.erro) {
+      console.warn('Inversor:', dados.erro);
       return;
     }
-    dadosElekeeper = dados;
+    dadosInversor = dados;
 
     // Atualizar card de potência instantânea do inversor
     const potEl = document.getElementById('inversor-potencia');
@@ -302,18 +308,16 @@ async function carregarElekeeper() {
       stEl.style.color = dados.estado === 'Normal' ? '#3fb950' : '#f85149';
     }
 
-    // Rederendar o mês selecionado com dados do Elekeeper disponíveis
-    const sel = document.getElementById('seletorMes');
-    if (sel && dadosGlobais) renderizarMesSelecionado(sel.value);
-
   } catch (e) {
-    console.error('Erro ao carregar Elekeeper:', e);
+    console.error('Erro ao carregar status do inversor:', e);
   }
 }
 
 window.onload = async function() {
   await carregarGestaoEnergetica();
-  carregarElekeeper();
-  // Atualiza Elekeeper a cada 5 minutos
-  setInterval(carregarElekeeper, 300000);
+  carregarInversor();
+  // Atualiza o status do inversor a cada 5 minutos
+  // (o cache no Supabase só muda a cada 10 min, mas não faz mal
+  // checar com mais frequência — o custo é só uma leitura simples)
+  setInterval(carregarInversor, 300000);
 };
