@@ -5,7 +5,10 @@
 =================================================================
   HISTÓRICO DE ALTERAÇÕES:
     v4.1 (07/09/2026)
-      - Integração com inversor solar SAJ via /api/elekeeper
+      - Integração com inversor solar SAJ via /api/inversor (lê o
+        cache no Supabase, atualizado pelo sync_solar.py a cada 10 min).
+        (13/09/2026: substituiu /api/elekeeper, aposentado por depender
+        de token manual e endpoints v2 inexistentes)
       - Aviso informativo mostra estado e potência atual do
         inversor em tempo real (Normal/Offline + kW instantâneo)
       - Cards Geração solar total, Consumo solar e Economia solar
