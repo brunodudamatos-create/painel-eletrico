@@ -1,5 +1,5 @@
 // =============================================================
-// api/gestao.js  —  Gestão Energética  v5.0
+// api/gestao.js  —  Gestão Energética  v5.1
 // =============================================================
 //
 // CORREÇÃO PRINCIPAL — DIVISOR:
@@ -18,6 +18,17 @@
 // COMPATIBILIDADE COM O FRONTEND:
 //   Retorna todos os dias em diarios[] e todos os meses em mensais[]
 //   sem exigir parâmetros na URL.
+//
+// v5.1 (13/09/2026) — CORREÇÃO DO MÉTODO DE CÁLCULO SOLAR:
+//   O método de delta acumulado (v5.0) subestimava a geração do dia
+//   e do mês sempre que a coleta começava no meio do período —
+//   confirmado na prática: painel mostrava 20.61 kWh no dia enquanto
+//   o próprio site do SAJ mostrava 139.12 kWh (o dia inteiro).
+//   CORRIGIDO: usa geracao_hoje_kwh, que o SAJ já calcula pronto e
+//   reseta à meia-noite — pega a leitura mais recente de cada dia.
+//   O total do mês agora é a SOMA dos totais diários (não mais um
+//   delta do mês inteiro). Bate exatamente com o valor "Hoje" do
+//   site/app do SAJ, pois usa a mesma fonte.
 //
 // v5.0 (13/09/2026) — INTEGRAÇÃO SOLAR (tabela solar_geracao):
 //   Preenche os 3 campos que ficavam null aguardando o Elekeeper:
@@ -102,24 +113,30 @@ function calcularDelta(inicio, final) {
   return delta >= 0 ? delta : 0;
 }
 
-// ── Lógica de agrupamento solar (tabela solar_geracao) ────────
-// Separada da lógica elétrica acima para não arriscar mexer no que
-// já está validado. Mesma ideia de delta acumulado, mas sem ÷100.
+// ── Lógica diária solar (tabela solar_geracao) ────────────────
+// v5.1: NÃO usa mais delta acumulado. O SAJ já entrega pronto, em
+// cada leitura, o campo geracao_hoje_kwh — o total do dia inteiro,
+// calculado pelo próprio SAJ e resetado à meia-noite. Isso já bate
+// exatamente com o que aparece no site/app do SAJ. Só precisamos
+// pegar a leitura MAIS RECENTE de cada dia. Método de delta (usado
+// para o medidor elétrico acima) só faz sentido pra contador que
+// NUNCA reseta — não é o caso aqui, e usá-lo estava subestimando
+// o valor sempre que a coleta começava no meio do dia.
 
-function inicializarContadorSolar(chave) {
-  return { chave, inicio: null, final: null };
+function inicializarDiaSolar(chave) {
+  return { chave, geracaoHojeMaisRecente: null, timestampMaisRecente: null };
 }
 
-function adicionarLeituraSolar(registro, geracaoTotalKwh) {
-  const v = numero(geracaoTotalKwh);
+function adicionarLeituraSolarDia(registro, geracaoHojeKwh, timestampMs) {
+  const v = numero(geracaoHojeKwh);
   if (v === null || v < 0) return;
-  if (registro.inicio === null) registro.inicio = v;
-  registro.final = v;
-}
-
-function fecharRegistroSolar(registro) {
-  if (registro.inicio === null || registro.final === null) return null;
-  return arredondar(calcularDelta(registro.inicio, registro.final));
+  // Como as leituras são processadas em ordem crescente de tempo,
+  // a mais recente sempre substitui — mas o timestamp confirma
+  // caso a ordenação mude no futuro.
+  if (registro.timestampMaisRecente === null || timestampMs >= registro.timestampMaisRecente) {
+    registro.geracaoHojeMaisRecente = v;
+    registro.timestampMaisRecente   = timestampMs;
+  }
 }
 
 function fecharRegistro(registro, mensal) {
@@ -248,8 +265,8 @@ export default async function handler(req, res) {
       while (true) {
         const { data, error } = await supabase
           .from('solar_geracao')
-          .select('created_at, geracao_total_kwh')
-          .not('geracao_total_kwh', 'is', null)
+          .select('created_at, geracao_hoje_kwh')
+          .not('geracao_hoje_kwh', 'is', null)
           .order('created_at', { ascending: true })
           .range(offsetSolar, offsetSolar + PAGE_SIZE - 1);
 
@@ -260,43 +277,52 @@ export default async function handler(req, res) {
         offsetSolar += PAGE_SIZE;
       }
 
+      // ── Passo 1: geração solar do dia = geracao_hoje_kwh da
+      // leitura mais recente daquele dia (já vem pronto do SAJ) ──
       const mapaSolarDiario = {};
-      const mapaSolarMensal = {};
 
       for (const leitura of leiturasSolares) {
         const dataObj = new Date(leitura.created_at);
         if (isNaN(dataObj.getTime())) continue;
 
         const dia = diaLocal(dataObj);
-        const mes = mesLocal(dataObj);
-
-        if (!mapaSolarDiario[dia]) mapaSolarDiario[dia] = inicializarContadorSolar(dia);
-        if (!mapaSolarMensal[mes]) mapaSolarMensal[mes] = inicializarContadorSolar(mes);
-
-        adicionarLeituraSolar(mapaSolarDiario[dia], leitura.geracao_total_kwh);
-        adicionarLeituraSolar(mapaSolarMensal[mes], leitura.geracao_total_kwh);
+        if (!mapaSolarDiario[dia]) mapaSolarDiario[dia] = inicializarDiaSolar(dia);
+        adicionarLeituraSolarDia(mapaSolarDiario[dia], leitura.geracao_hoje_kwh, dataObj.getTime());
       }
 
-      const preencherSolar = (registro, chave, mapaSolar) => {
-        const contador = mapaSolar[chave];
-        const geracaoSolar = contador ? fecharRegistroSolar(contador) : null;
+      // ── Passo 2: geração solar do mês = soma dos dias daquele mês ──
+      const mapaSolarMensal = {}; // mes -> soma acumulada
 
-        registro.geracao_solar_kwh = geracaoSolar;
+      for (const dia of Object.keys(mapaSolarDiario)) {
+        const geracaoDia = mapaSolarDiario[dia].geracaoHojeMaisRecente;
+        if (geracaoDia === null) continue;
+        const mes = dia.slice(0, 7); // 'AAAA-MM-DD' → 'AAAA-MM'
+        mapaSolarMensal[mes] = (mapaSolarMensal[mes] || 0) + geracaoDia;
+      }
 
-        if (geracaoSolar === null) {
+      const preencherSolar = (registro, geracaoSolar) => {
+        registro.geracao_solar_kwh = geracaoSolar === null || geracaoSolar === undefined
+          ? null : arredondar(geracaoSolar);
+
+        if (registro.geracao_solar_kwh === null) {
           registro.consumo_solar_kwh = null;
           registro.economia_rs       = null;
           return;
         }
 
         registro.consumo_solar_kwh = arredondar(
-          Math.max(geracaoSolar - (registro.energia_exportada_kwh || 0), 0)
+          Math.max(registro.geracao_solar_kwh - (registro.energia_exportada_kwh || 0), 0)
         );
-        registro.economia_rs = arredondar(geracaoSolar * TARIFA_KWH);
+        registro.economia_rs = arredondar(registro.geracao_solar_kwh * TARIFA_KWH);
       };
 
-      for (const registro of diarios) preencherSolar(registro, registro.data, mapaSolarDiario);
-      for (const registro of mensais) preencherSolar(registro, registro.mes,  mapaSolarMensal);
+      for (const registro of diarios) {
+        const dado = mapaSolarDiario[registro.data];
+        preencherSolar(registro, dado ? dado.geracaoHojeMaisRecente : null);
+      }
+      for (const registro of mensais) {
+        preencherSolar(registro, mapaSolarMensal[registro.mes] ?? null);
+      }
 
     } catch (solarErr) {
       console.error('Aviso: falha ao mesclar dados solares em /api/gestao:', solarErr);
@@ -327,7 +353,8 @@ export default async function handler(req, res) {
         total_dias:            diarios.length,
         total_meses:           mensais.length,
         nota: 'kWh = (última − primeira leitura do contador por período) ÷ 100. Imune a perdas de Wi-Fi.',
-        solar: 'geracao_solar_kwh = mesmo método de delta, sem ÷100 (solar_geracao já grava em kWh). ' +
+        solar: 'geracao_solar_kwh usa geracao_hoje_kwh (já calculado pelo SAJ, reseta à meia-noite): ' +
+               'valor diário = leitura mais recente do dia; valor mensal = soma dos dias do mês. ' +
                'consumo_solar_kwh = geracao_solar_kwh − energia_exportada_kwh. economia_rs = geracao_solar_kwh × tarifa. ' +
                'Os 3 campos ficam null (não zero) quando não há leitura solar para o período.',
       },
