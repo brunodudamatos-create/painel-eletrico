@@ -1,7 +1,15 @@
 // ================================================================
-// gestao.js — Gestão Energética  v5.0  —  13/09/2026
+// gestao.js — Gestão Energética  v5.1  —  13/09/2026
 // ================================================================
 // HISTÓRICO:
+//   v5.1 (13/09/2026)
+//     - Adicionado horário da última leitura do inversor ao lado
+//       da potência atual, com aviso visual quando passar de 20 min
+//       sem atualizar. MOTIVO: o robô só coleta das 6h às ~17h50 de
+//       Cuiabá; fora desse horário o valor mostrado fica "congelado"
+//       na última leitura, e sem esse aviso parecia um erro de
+//       medição (ex: 0,07 kW às 19h21, quando na real era só uma
+//       leitura de 17h50 ainda sendo exibida).
 //   v5.0 (13/09/2026)
 //     - Cards solares (geração/consumo/economia) agora vêm PRONTOS
 //       de /api/gestao (calculados lá com dados mensais reais da
@@ -306,6 +314,33 @@ async function carregarInversor() {
     if (stEl) {
       stEl.textContent = dados.estado || '--';
       stEl.style.color = dados.estado === 'Normal' ? '#3fb950' : '#f85149';
+    }
+
+    // Horário da última leitura — usa coletado_em (tem fuso horário
+    // explícito), não atualizado_em (texto puro do SAJ, ambíguo).
+    // O robô só coleta das 6h às ~17h50 de Cuiabá: fora desse
+    // horário, o valor mostrado é da última leitura antes de parar,
+    // não é ao vivo — por isso avisamos quando passar de 20 min
+    // (o dobro do intervalo normal de 10 min entre coletas).
+    const attEl = document.getElementById('inversor-atualizado');
+    if (attEl && dados.coletado_em) {
+      const dataLeitura = new Date(dados.coletado_em);
+      if (!isNaN(dataLeitura.getTime())) {
+        const minutosAtras = Math.round((Date.now() - dataLeitura.getTime()) / 60000);
+        const horaFormatada = dataLeitura.toLocaleTimeString('pt-BR', {
+          timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit'
+        });
+
+        if (minutosAtras <= 20) {
+          attEl.textContent = `(última leitura: ${horaFormatada})`;
+          attEl.style.color = '#8b949e';
+        } else {
+          const horas = Math.floor(minutosAtras / 60);
+          const texto = horas >= 1 ? `há ${horas}h${minutosAtras % 60}min` : `há ${minutosAtras} min`;
+          attEl.textContent = `⚠️ desatualizado — última leitura: ${horaFormatada} (${texto})`;
+          attEl.style.color = '#d29922';
+        }
+      }
     }
 
   } catch (e) {
