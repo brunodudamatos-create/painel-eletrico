@@ -1,52 +1,37 @@
 # =============================================================
 # sync_solar.py  —  Coleta dados do inversor SAJ via Elekeeper
-# Versão 2.8  —  09/09/2026
+# Versão 3.0  —  13/09/2026
 # =============================================================
 # HISTÓRICO:
-#   v2.8 (09/09/2026)
-#     - CORREÇÃO CRÍTICA baseada no código fonte pysaj-elekeeper v0.0.10:
-#       Content-Type: form-urlencoded em TODOS os endpoints (não JSON)
-#       enableSign: false — x-sign NÃO é necessário
-#       data= em todos os POSTs (não json=)
-#       Isso corrige errCode 10001 nos endpoints autenticados
-#   v2.7 (09/09/2026)
-#     - Supabase: substituído supabase-py por REST API direta
-#       Resolve [Errno -2] Name or service not known no GitHub Actions
-#       Usa requests (já instalado) + apikey header
-#   v2.6 (09/09/2026)
-#     - Headers obrigatórios adicionados (confirmados pelo DevTools):
-#       x-app-project-name, x-client-code, x-org-code, x-lang,
-#       x-theme-color, content-language, x-client-date, x-timestamp
-#       Esses headers são exigidos pelos endpoints v2 autenticados
-#     - Erro Supabase isolado: falha DNS não interrompe mais o loop
-#       Verifica se SUPABASE_URL/KEY estão nos Secrets do GitHub
-#   v2.5 (09/09/2026)
-#     - Adicionado log da resposta completa dos endpoints
-#       para diagnosticar por que retorna vazio durante o dia
-#   v2.4 (09/09/2026)
-#     - flow vazio não é mais erro: inversor offline (noite) é normal
-#       Grava registro com potência 0 e estado Offline para histórico
-#   v2.3 (09/09/2026)
-#     - Extração do token corrigida para estrutura real do iop:
-#       data.tokenValue (campo principal) com fallbacks para
-#       data.token, data.accessToken, data.originToken
-#       Filtra tokens vazios ("" ou "null")
-#   v2.2 (09/09/2026)
-#     - Login corrigido: usa form-encoded (data=) em vez de JSON
-#       A biblioteca pysaj-elekeeper usa data= no POST de login
-#       Servidor rejeita JSON com errCode 10003 "loginType null"
-#   v2.1 (09/09/2026)
-#     - Login: removido sign_only_common=True, assina payload completo
-#     - loginType e rememberMe enviados como string (igual ao browser)
-#     - Corrige errCode 10003: "Login type can't be null"
-#   v2.0 (09/09/2026)
-#     - Chaves JSON confirmadas com dados reais capturados pelo DevTools
-#     - Login via iop.saj-electric.com/dev-api/api/v1/sys/login
-#     - Coleta via iop.saj-electric.com/dev-api/api/v2/...
-#     - AES-128-ECB para senha + MD5+SHA1 para assinatura
-#     - raw_flow e raw_stats gravados em JSONB para auditoria
-#     - Retry automático em caso de falha no login ou coleta
-#     - Todos os campos com .get() + default — sem KeyError
+#   v3.0 (13/09/2026)
+#     - REESCRITO DO ZERO a partir do código-fonte real da biblioteca
+#       pysaj-elekeeper v0.0.10 (baixado e inspecionado diretamente:
+#       elekeeper/client.py e elekeeper/crypto.py), adaptado de
+#       async (httpx) para síncrono (requests).
+#     - CAUSA RAIZ do errCode 10001 identificada: os endpoints de
+#       dados (getDeviceEneryFlowData, getPlantStatisticsData) são
+#       GET, não POST. O v2.8 chamava com POST e URLs /api/v2/...
+#       que não existem na biblioteca de referência.
+#     - Endpoints corrigidos para os reais (todos GET, sob /api/v1):
+#         GET /monitor/home/getDeviceEneryFlowData   (nota: "Enery")
+#         GET /monitor/home/getPlantStatisticsData
+#       Ambos recebem plantUid + deviceSn como query params assinados.
+#     - Adicionada resolução automática do deviceSn via
+#       GET /monitor/plant/getOnePlantInfo (a biblioteca usa isso
+#       internamente antes de chamar os endpoints "home").
+#     - Assinatura (signed_params) copiada linha a linha do
+#       crypto.py real — sem os campos extras (clientCode, orgCode,
+#       themeColor) que o v2.8 inventou e que não existem na
+#       implementação de referência.
+#     - Checagem de erro agora usa o campo real "errCode" (0 = ok),
+#       com fallback para "connOk" por segurança.
+#     - Base URL continua iop.saj-electric.com (biblioteca usa eop
+#       por padrão — o portal do usuário é iop, então mantemos as
+#       chaves alternativas de token: tokenValue, token, accessToken).
+#
+#   (histórico anterior v2.0–v2.8 removido por brevidade — a lógica
+#    de criptografia AES da senha e a extração alternativa de token
+#    permanecem herdadas dessas versões, pois já estavam corretas)
 #
 # VARIÁVEIS DE AMBIENTE (GitHub Secrets):
 #   SAJ_USER      — email do Elekeeper
@@ -72,23 +57,21 @@ except ImportError:
     print("ERRO: instale pycryptodome: pip install pycryptodome")
     sys.exit(1)
 
-# Supabase via REST API direta (mais confiável que supabase-py no GitHub Actions)
-# Não precisa de biblioteca externa — usa requests que já está instalado
-
 
 # ── Constantes do Elekeeper ────────────────────────────────────
-# Extraídas da biblioteca open-source pysaj-elekeeper (MIT)
-# e validadas contra o portal iop.saj-electric.com
+# Extraídas diretamente de elekeeper/crypto.py e elekeeper/client.py
+# (pysaj-elekeeper v0.0.10, inspecionado no wheel oficial do PyPI)
 
-BASE_URL_V1       = "https://iop.saj-electric.com/dev-api/api/v1"
-BASE_URL_V2       = "https://iop.saj-electric.com/dev-api/api/v2"
+BASE_URL          = "https://iop.saj-electric.com"   # portal do usuário (biblioteca usa eop por padrão)
+API_BASE          = f"{BASE_URL}/dev-api"
 APP_PROJECT_NAME  = "elekeeper"
 CLIENT_ID         = "esolar-monitor-admin"
 SIGNATURE_SECRET  = "ktoKRLgQPjvNyUZO8lVc9kU1Bsip6XIe"
 PASSWORD_AES_KEY  = bytes.fromhex("ec1840a7c53cf0709eb784be480379b6")
 RANDOM_ALPHABET   = "ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678"
+LANGUAGE          = "pt"
 
-# Estados do inversor
+# Estados do inversor (usado só para fallback de exibição)
 ESTADOS = {0: "Offline", 1: "Normal", 2: "Alarme", 3: "Falha"}
 
 
@@ -107,259 +90,221 @@ SUPABASE_KEY = get_env("SUPABASE_KEY")
 PLANT_UID    = os.environ.get("SAJ_PLANT_UID", "2952D7851F7147278195F923618A0741")
 
 
-# ── Funções de criptografia ────────────────────────────────────
+# ── Criptografia / assinatura (copiado de elekeeper/crypto.py) ─
 
 def encrypt_password(password: str) -> str:
-    """
-    Criptografa a senha com AES-128-ECB + PKCS7 padding.
-    Mesmo algoritmo do frontend Elekeeper (chave: ec1840a7c53cf0709eb784be480379b6).
-    Retorna hex string.
-    """
+    """AES-128-ECB + PKCS7, igual ao frontend Elekeeper. Retorna hex string."""
     cipher = AES.new(PASSWORD_AES_KEY, AES.MODE_ECB)
     padded = pad(password.encode("utf-8"), AES.block_size)
     return cipher.encrypt(padded).hex()
 
 
 def random_token(length: int = 32) -> str:
-    """Gera o campo 'random' da requisição usando o alfabeto do Elekeeper."""
     return "".join(random.choice(RANDOM_ALPHABET) for _ in range(length))
 
 
 def timestamp_ms() -> int:
-    """Timestamp em milissegundos (campo timeStamp das requisições)."""
     return int(time.time() * 1000)
 
 
-def sign_params(params: dict, sign_only_common: bool = False) -> dict:
-    """
-    Monta e assina o payload da requisição.
+def is_empty(value) -> bool:
+    return value is None or value == "" or value == [] or value == {}
 
-    Algoritmo (extraído do crypto.py da pysaj-elekeeper):
-      1. Une params + common fields (appProjectName, clientDate, etc.)
-      2. Remove campos vazios (None, "", [], {})
-      3. Ordena as chaves alfabeticamente → "k1=v1&k2=v2&..."
-      4. Concatena "&key=SECRET"
-      5. MD5 do resultado
-      6. SHA1 do MD5 → uppercase = assinatura final (campo 'signature')
 
-    O campo 'signParams' lista as chaves que foram assinadas (para o servidor validar).
-    """
-    ts    = timestamp_ms()
-    rand  = random_token()
-    today = date.today().isoformat()
+def compact_mapping(values: dict) -> dict:
+    """Remove campos vazios recursivamente — igual ao frontend."""
+    compacted = {}
+    for key, value in values.items():
+        if isinstance(value, dict):
+            value = compact_mapping(value)
+        elif isinstance(value, list):
+            value = [item for item in value if not is_empty(item)]
+        if not is_empty(value):
+            compacted[key] = value
+    return compacted
 
-    common = {
+
+def common_params() -> dict:
+    return {
         "appProjectName": APP_PROJECT_NAME,
-        "clientDate":     today,
-        "lang":           "pt",
-        "timeStamp":      ts,
-        "random":         rand,
+        "clientDate":     date.today().isoformat(),
+        "lang":           LANGUAGE,
+        "timeStamp":      timestamp_ms(),
+        "random":         random_token(),
     }
 
-    # Remove campos vazios — o frontend faz isso antes de assinar
-    def is_empty(v):
-        return v is None or v == "" or v == [] or v == {}
 
-    merged = {k: v for k, v in {**params, **common}.items() if not is_empty(v)}
+def signed_params(params=None, sign_only_common: bool = False) -> dict:
+    """
+    Réplica exata de elekeeper.crypto.signed_params().
+    Login assina só os campos comuns (sign_only_common=True);
+    os demais endpoints assinam o payload completo.
+    """
+    common = common_params()
+    request_params = compact_mapping({**(params or {}), **common})
+    signature_source = compact_mapping(common if sign_only_common else dict(request_params))
 
-    # Fonte da assinatura: só common fields (login) ou payload completo (demais)
-    sig_src = dict(common if sign_only_common else merged)
-    sig_src.pop("confirmPassword", None)
-    sig_src.pop("rememberMe",      None)
-    sig_src.pop("uuid",            None)
-    sig_src["clientId"] = CLIENT_ID
+    signature_source.pop("confirmPassword", None)
+    signature_source.pop("rememberMe", None)
+    signature_source.pop("uuid", None)
+    signature_source["clientId"] = CLIENT_ID
 
-    # Ordenar e concatenar
-    canonical = "&".join(sorted(f"{k}={v}" for k, v in sig_src.items()))
-    full_str  = f"{canonical}&key={SIGNATURE_SECRET}"
-
-    # MD5 → SHA1 → uppercase
-    md5_hex   = hashlib.md5(full_str.encode(), usedforsecurity=False).hexdigest()
+    keys = list(signature_source)
+    canonical = "&".join(sorted(f"{k}={signature_source[k]}" for k in keys))
+    md5_hex   = hashlib.md5(f"{canonical}&key={SIGNATURE_SECRET}".encode(), usedforsecurity=False).hexdigest()
     signature = hashlib.sha1(md5_hex.encode("utf-8"), usedforsecurity=False).hexdigest().upper()
 
     return {
-        **merged,
-        # Campos obrigatórios em TODAS as requisições
+        **request_params,
         "appProjectName": APP_PROJECT_NAME,
         "clientId":       CLIENT_ID,
-        "clientCode":     "organization",
-        "orgCode":        "saj",
-        "themeColor":     "dark",
-        "signParams":     ",".join(sig_src.keys()),
+        "signParams":     ",".join(keys),
         "signature":      signature,
-        "timeStamp":      ts,
-        "clientDate":     today,
-        "random":         rand,
+        "timeStamp":      common["timeStamp"],
+        "clientDate":     common["clientDate"],
+        "random":         common["random"],
     }
 
 
-# ── Cliente Elekeeper ──────────────────────────────────────────
+# ── Cliente Elekeeper (síncrono, requests) ─────────────────────
 
 class ElekeeperClient:
-    """Cliente HTTP para o portal iop.saj-electric.com."""
+    """Cliente HTTP síncrono para https://iop.saj-electric.com/dev-api."""
 
     def __init__(self):
         self.session = requests.Session()
-        self.token   = None
-        # Headers confirmados pelo código fonte da biblioteca pysaj-elekeeper v0.0.10
-        # Content-Type é form-urlencoded em TODOS os endpoints (não JSON)
-        # enableSign: false — x-sign NÃO é necessário
-        self.session.headers.update({
-            "Content-Type":    "application/x-www-form-urlencoded;charset=UTF-8",
-            "Content-Language": "zh_CN",
-            "enableSign":      "false",
-            "lang":            "pt",
-        })
+        self.token = None
 
-    def _post(self, base: str, endpoint: str, payload: dict) -> dict:
-        """POST autenticado com tratamento completo de erros."""
-        url = f"{base}{endpoint}"
-        headers = dict(self.session.headers)
-        if self.token:
+    def _headers(self, auth: bool = True) -> dict:
+        headers = {
+            "Content-Language": "zh_CN",
+            "Content-Type":     "application/x-www-form-urlencoded;charset=UTF-8",
+            "enableSign":       "false",
+            "lang":             LANGUAGE,
+        }
+        if auth and self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+        return headers
+
+    def _request(self, method: str, path: str, params=None,
+                 auth: bool = True, sign_only_common: bool = False) -> dict:
+        """
+        Réplica de elekeeper.client.SajClient._request(), mas síncrona.
+        IMPORTANTE: GET envia os params assinados na query string;
+        POST envia como corpo form-urlencoded. O v2.8 errava aqui,
+        usando POST para tudo.
+        """
+        signed  = signed_params(params, sign_only_common=sign_only_common)
+        headers = self._headers(auth=auth)
+        url     = f"{API_BASE}{path}"
 
         try:
-            # data= envia como form-urlencoded (obrigatório para iop.saj-electric.com)
-            resp = self.session.post(url, data=payload, headers=headers, timeout=30)
+            if method.upper() == "GET":
+                resp = self.session.get(url, params=signed, headers=headers, timeout=30)
+            elif method.upper() == "POST":
+                resp = self.session.post(url, data=signed, headers=headers, timeout=30)
+            else:
+                raise ValueError(f"Método não suportado: {method}")
         except requests.Timeout:
-            raise Exception(f"Timeout ao chamar {endpoint}")
+            raise Exception(f"Timeout ao chamar {path}")
         except requests.ConnectionError as e:
-            raise Exception(f"Erro de conexão em {endpoint}: {e}")
+            raise Exception(f"Erro de conexão em {path}: {e}")
 
         if resp.status_code == 401:
-            raise Exception(f"Token expirado ou inválido (401) em {endpoint}")
+            raise Exception(f"Token expirado ou inválido (401) em {path}")
         if resp.status_code != 200:
-            raise Exception(f"HTTP {resp.status_code} em {endpoint}: {resp.text[:200]}")
+            raise Exception(f"HTTP {resp.status_code} em {path}: {resp.text[:300]}")
 
         try:
-            data = resp.json()
+            payload = resp.json()
         except Exception:
-            raise Exception(f"Resposta não é JSON em {endpoint}: {resp.text[:200]}")
+            raise Exception(f"Resposta não é JSON em {path}: {resp.text[:300]}")
 
-        # Verificar campo connOk (padrão do Elekeeper)
-        conn_ok = data.get("connOk")
-        if conn_ok is False:
-            err = data.get("errMsg") or data.get("fallbackMsg") or "Erro desconhecido"
-            raise Exception(f"Elekeeper recusou {endpoint}: {err}")
+        # Campo de erro real da API é "errCode" (0 = sucesso).
+        # Mantemos fallback em "connOk" observado no portal iop.
+        err_code = payload.get("errCode", 0)
+        if err_code not in (0, None):
+            err_msg = payload.get("errMsg") or payload.get("fallbackMsg") or "Erro desconhecido"
+            raise Exception(f"Elekeeper recusou {path} (errCode={err_code}): {err_msg}")
+        if payload.get("connOk") is False:
+            err_msg = payload.get("errMsg") or payload.get("fallbackMsg") or "Erro desconhecido"
+            raise Exception(f"Elekeeper recusou {path}: {err_msg}")
 
-        return data
+        return payload.get("data") or {}
 
     def login(self) -> None:
         """
-        Faz login no Elekeeper e armazena o JWT.
-
-        Endpoint: POST /dev-api/api/v1/sys/login
-        Payload:
-          - username: email do usuário
-          - password: senha criptografada com AES-128-ECB
-          - rememberMe: false
-          - loginType: 1
-
-        O token pode estar em:
-          - resp.cookies["Authorization"]  (mais comum no iop)
-          - resp.headers["Authorization"]
-          - data["result"]["token"]
-          - data["result"] (string direta)
+        POST /api/v1/sys/login — assina só os campos comuns
+        (sign_only_common=True), igual à biblioteca de referência.
         """
-        # Login: assina o payload completo (não só common fields)
-        # O iop.saj-electric.com exige loginType no corpo assinado
-        payload = sign_params({
-            "username":   SAJ_USER,
-            "password":   encrypt_password(SAJ_PASS),
-            "rememberMe": "false",   # string como o browser envia
-            "loginType":  "1",       # string como o browser envia
-        })
+        data = self._request(
+            "POST",
+            "/api/v1/sys/login",
+            {
+                "username":   SAJ_USER,
+                "password":   encrypt_password(SAJ_PASS),
+                "rememberMe": False,
+                "loginType":  1,
+            },
+            auth=False,
+            sign_only_common=True,
+        )
 
-        url  = f"{BASE_URL_V1}/sys/login"
-        headers = dict(self.session.headers)
-        resp = self.session.post(url, data=payload, headers=headers, timeout=30)
-
-        if resp.status_code not in (200, 201):
-            raise Exception(f"Login HTTP {resp.status_code}: {resp.text[:300]}")
-
-        data = resp.json()
-
-        if data.get("connOk") is False:
-            raise Exception(f"Login recusado: {data.get('errMsg')}")
-
-        # Extrair token — estrutura real do iop.saj-electric.com:
-        # {"data": {"expiresIn": 259200, "originToken": "...", 
-        #            "refreshToken": "...", "tokenValue": "...",
-        #            "tokenName": "Authorization"}, "errCode": 0}
-        token = None
-
-        # 1. data.tokenValue (campo principal do iop v2)
-        data_obj = data.get("data") or {}
-        if isinstance(data_obj, dict):
-            token = (data_obj.get("tokenValue") or
-                     data_obj.get("token") or
-                     data_obj.get("accessToken") or
-                     data_obj.get("access_token") or
-                     data_obj.get("originToken") or
-                     data_obj.get("refreshToken"))
-            # Filtrar tokens vazios
-            if token == "" or token == "null":
-                token = None
-
-        # 2. result direto (formato antigo eop)
-        if not token:
-            result = data.get("result")
-            if isinstance(result, dict):
-                token = (result.get("token") or
-                         result.get("tokenValue") or
-                         result.get("access_token"))
-            elif isinstance(result, str) and len(result) > 20:
-                token = result
-
-        # 3. Cookie
-        if not token:
-            token = resp.cookies.get("Authorization") or resp.cookies.get("token")
-
-        # 4. Header Authorization
-        if not token:
-            auth_header = resp.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header.replace("Bearer ", "")
-
-        if not token:
-            raise Exception(
-                f"Token não encontrado. Resposta completa: {json.dumps(data)}\n"
-                f"Cookies: {dict(resp.cookies)}\n"
-                f"Headers: {dict(resp.headers)}"
-            )
+        # A biblioteca de referência (portal eop) usa data["token"].
+        # O portal iop do usuário retorna data["tokenValue"] — mantemos
+        # ambas as chaves e outros fallbacks já validados por DevTools.
+        token = (
+            data.get("tokenValue")
+            or data.get("token")
+            or data.get("accessToken")
+            or data.get("access_token")
+            or data.get("originToken")
+        )
+        if token in (None, "", "null"):
+            raise Exception(f"Token não encontrado na resposta de login: {json.dumps(data)[:300]}")
 
         self.token = token
-        self.session.headers["Authorization"] = f"Bearer {token}"
         print(f"✅ Login OK — token obtido ({token[:30]}...)")
 
-    def get_flow(self) -> dict:
+    def get_primary_device_sn(self, plant_uid: str):
         """
-        Busca fluxo de energia em tempo real.
-        Endpoint: POST /dev-api/api/v2/monitor/home/getDeviceEnergyFlowDiagram
+        GET /api/v1/monitor/plant/getOnePlantInfo — usado pela biblioteca
+        para obter o deviceSn antes de chamar os endpoints 'home'.
+        Retorna None se não encontrar (os endpoints toleram deviceSn ausente).
         """
-        payload = sign_params({"plantUid": PLANT_UID})
-        data    = self._post(BASE_URL_V2, "/monitor/home/getDeviceEnergyFlowDiagram", payload)
-        print(f"   getDeviceEnergyFlowDiagram resposta: {json.dumps(data)[:500]}")
-        return data.get("data") or {}
+        try:
+            data = self._request("GET", "/api/v1/monitor/plant/getOnePlantInfo", {"plantUid": plant_uid})
+        except Exception as e:
+            print(f"   ⚠️  Não foi possível obter deviceSn ({e}) — seguindo sem ele")
+            return None
 
-    def get_plant_stats(self) -> dict:
-        """
-        Busca estatísticas da planta (geração total acumulada).
-        Endpoint: POST /dev-api/api/v2/monitor/plant/getPlantListStats
-        """
-        hoje = date.today().isoformat()
-        payload = sign_params({
-            "pageNo":         1,
-            "pageSize":       10,
-            "keyWordType":    "1",
-            "queryDateType":  1,
-            "queryStartDate": hoje,
-            "queryEndDate":   hoje,
-        })
-        data  = self._post(BASE_URL_V2, "/monitor/plant/getPlantListStats", payload)
-        print(f"   getPlantListStats resposta: {json.dumps(data)[:500]}")
-        lista = (data.get("data") or {}).get("list") or []
-        return lista[0] if lista else {}
+        device_sns = data.get("deviceSnList") or []
+        if device_sns:
+            return str(device_sns[0])
+        for device in data.get("devices") or []:
+            if isinstance(device, dict) and device.get("deviceSn"):
+                return str(device["deviceSn"])
+        return None
+
+    def get_flow(self, plant_uid: str, device_sn) -> dict:
+        """GET /api/v1/monitor/home/getDeviceEneryFlowData (nota: 'Enery', não 'Energy')."""
+        data = self._request(
+            "GET",
+            "/api/v1/monitor/home/getDeviceEneryFlowData",
+            {"plantUid": plant_uid, "deviceSn": device_sn},
+        )
+        print(f"   getDeviceEneryFlowData resposta: {json.dumps(data)[:500]}")
+        return data
+
+    def get_plant_stats(self, plant_uid: str, device_sn) -> dict:
+        """GET /api/v1/monitor/home/getPlantStatisticsData."""
+        data = self._request(
+            "GET",
+            "/api/v1/monitor/home/getPlantStatisticsData",
+            {"plantUid": plant_uid, "deviceSn": device_sn},
+        )
+        print(f"   getPlantStatisticsData resposta: {json.dumps(data)[:500]}")
+        return data
 
 
 # ── Gravar no Supabase ─────────────────────────────────────────
@@ -368,29 +313,32 @@ def gravar_supabase(flow: dict, stats: dict) -> None:
     """Grava dados na tabela solar_geracao via REST API do Supabase."""
 
     total_kwh = None
-    cum = stats.get("cumulativeEnergy")
+    cum = stats.get("totalPvEnergy") or stats.get("cumulativeEnergy")
     if cum is not None:
         try:
             total_kwh = float(cum)
         except (ValueError, TypeError):
             total_kwh = None
 
+    hoje_kwh = flow.get("todayPvEnergy")
+    if hoje_kwh is None:
+        hoje_kwh = stats.get("todayPvEnergy")
+
     registro = {
         "plant_uid":           PLANT_UID,
-        "potencia_atual_w":    flow.get("totalPvPower"),
-        "geracao_hoje_kwh":    flow.get("todayPvEnergy"),
+        "potencia_atual_w":    flow.get("totalPvPower") or flow.get("solarPower") or stats.get("powerNow"),
+        "geracao_hoje_kwh":    hoje_kwh,
         "geracao_total_kwh":   total_kwh,
-        "estado":              flow.get("runningStateName") or
+        "estado":              flow.get("runningStateName") or stats.get("userModeName") or
                                ESTADOS.get(flow.get("runningState", 0), "Desconhecido"),
         "estado_cod":          flow.get("runningState"),
         "potencia_sistema_kw": flow.get("systemPower"),
-        "atualizado_em":       flow.get("updateDate"),
+        "atualizado_em":       flow.get("updateDate") or stats.get("dataTime"),
         "raw_flow":            flow,
         "raw_stats":           stats,
     }
     registro_limpo = {k: v for k, v in registro.items() if v is not None}
 
-    # REST API direta — mais confiável que supabase-py no GitHub Actions
     url = f"{SUPABASE_URL}/rest/v1/solar_geracao"
     headers = {
         "apikey":        SUPABASE_KEY,
@@ -430,22 +378,23 @@ def main():
             client = ElekeeperClient()
             client.login()
 
+            print("🔎 Resolvendo deviceSn da planta...")
+            device_sn = client.get_primary_device_sn(PLANT_UID)
+            print(f"   deviceSn: {device_sn or '(não encontrado — seguindo sem ele)'}")
+
             print("📡 Buscando fluxo de energia...")
-            flow = client.get_flow()
+            flow = client.get_flow(PLANT_UID, device_sn)
             if not flow:
-                # Inversor offline (noite/nublado) — normal fora do horário solar
-                # Gravar registro com potência 0 para manter histórico contínuo
                 print("⚠️  Inversor offline ou sem geração — registrando estado")
                 flow = {"runningState": 0, "runningStateName": "Offline",
                         "totalPvPower": 0, "todayPvEnergy": None}
 
             print("📊 Buscando estatísticas da planta...")
-            stats = client.get_plant_stats()
-            # stats pode ser vazio em alguns horários — não é erro crítico
+            stats = client.get_plant_stats(PLANT_UID, device_sn)
 
             print(f"\n☀️  Potência atual:  {flow.get('totalPvPower', '--')} W")
-            print(f"☀️  Geração hoje:    {flow.get('todayPvEnergy', '--')} kWh")
-            print(f"☀️  Total acumulado: {stats.get('cumulativeEnergy', '--')} kWh")
+            print(f"☀️  Geração hoje:    {flow.get('todayPvEnergy', stats.get('todayPvEnergy', '--'))} kWh")
+            print(f"☀️  Total acumulado: {stats.get('totalPvEnergy', '--')} kWh")
             print(f"☀️  Estado:          {flow.get('runningStateName', '--')}")
             print(f"☀️  Última leitura:  {flow.get('updateDate', '--')}")
 
@@ -455,12 +404,12 @@ def main():
             except Exception as db_err:
                 print(f"\n⚠️  Dados coletados mas erro ao gravar no Supabase: {db_err}")
                 print("   Verifique se SUPABASE_URL e SUPABASE_KEY estão nos Secrets do GitHub")
-            return  # Sai do loop — coleta foi bem-sucedida
+            return
 
         except Exception as e:
             print(f"\n❌ Erro na tentativa {tentativa}: {e}")
             if tentativa < max_tentativas:
-                espera = tentativa * 15  # 15s, 30s entre tentativas
+                espera = tentativa * 15
                 print(f"⏳ Aguardando {espera}s antes de tentar novamente...")
                 time.sleep(espera)
             else:
