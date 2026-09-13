@@ -104,12 +104,18 @@
         &nbsp;|&nbsp;
         Potência atual:
         <span id="inversor-potencia" style="font-weight:700;color:#3fb950">-- kW</span>
+        <span id="inversor-atualizado" style="color:#8b949e;font-size:.75rem;margin-left:6px"></span>
       </span>
     </div>
     <span style="color:#8b949e;white-space:nowrap">
       MÊS: <select id="seletorMes" style="background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:3px 8px;margin-left:4px"></select>
     </span>
   </div>
+
+  <!-- v5.3 (13/09/2026): span #inversor-atualizado mostra a hora da última
+       leitura do inversor, para deixar claro quando o dado está desatualizado
+       (o robô só coleta das 6h às ~17h50 de Cuiabá — fora desse horário, o
+       valor mostrado é da última leitura antes de parar, não é ao vivo). -->
 
   <!-- Cards principais -->
   <div class="grid4">
